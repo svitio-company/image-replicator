@@ -14,8 +14,12 @@ jobs:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
+      attestations: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      digest: ${{ steps.build.outputs.digest }}
 
     steps:
       - name: Checkout code
@@ -43,6 +47,13 @@ jobs:
       - name: Type check
         run: bun run type-check
 
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
       - name: Build application
         run: bun run build
 
@@ -61,13 +72,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -79,9 +84,63 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
         with:
-          generate_release_notes: true
-          draft: false
-          prerelease: false
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  helm-release:
+    name: Package and Publish Helm Chart
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'latest'
+
+      - name: Update Helm chart version and image
+        run: |
+          VERSION=${{ needs.build-and-push.outputs.version }}
+          
+          # Update Chart.yaml
+          sed -i "s/^version:.*/version: ${VERSION}/" chart/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" chart/Chart.yaml
+          
+          # Update values.yaml with new image
+          sed -i "s|repository:.*|repository: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}|" chart/values.yaml
+          sed -i "s/tag:.*/tag: \"${VERSION}\"/" chart/values.yaml
+          
+          cat chart/Chart.yaml
+          cat chart/values.yaml
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.6.0
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+        with:
+          charts_dir: .
+          skip_existing: true
