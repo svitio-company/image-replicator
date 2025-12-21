@@ -1,0 +1,17 @@
+apiVersion: v2
+name: image-replicator
+description: A Kubernetes Validating Webhook to verify and replicate container images to target registries
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - kubernetes
+  - webhook
+  - validation
+  - container
+  - registry
+maintainers:
+  - name: Image Replicator Team
+home: https://github.com/yourusername/image-replicator
+sources:
+  - https://github.com/yourusername/image-replicator

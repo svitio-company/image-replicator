@@ -1,0 +1,24 @@
+{{- if .Values.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "image-validator-webhook.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "image-validator-webhook.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "image-validator-webhook.tlsSecretName" . }}
+  duration: {{ .Values.certManager.certificate.duration }}
+  renewBefore: {{ .Values.certManager.certificate.renewBefore }}
+  issuerRef:
+    kind: {{ .Values.certManager.issuer.kind }}
+    name: {{ include "image-validator-webhook.issuerName" . }}
+  dnsNames:
+    - {{ include "image-validator-webhook.webhookServiceName" . }}
+    - {{ include "image-validator-webhook.webhookServiceName" . }}.{{ .Release.Namespace }}
+    - {{ include "image-validator-webhook.webhookServiceName" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "image-validator-webhook.webhookServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local
+    {{- with .Values.certManager.certificate.dnsNames }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

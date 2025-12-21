@@ -1,0 +1,34 @@
+{
+  "benchmarks": [
+    {
+      "name": "Parse Docker Hub image",
+      "unit": "ops/sec",
+      "value": 1846822
+    },
+    {
+      "name": "Parse GCR image",
+      "unit": "ops/sec",
+      "value": 2489627
+    },
+    {
+      "name": "Parse image with digest",
+      "unit": "ops/sec",
+      "value": 3215736
+    },
+    {
+      "name": "Extract images from simple Pod",
+      "unit": "ops/sec",
+      "value": 2693119
+    },
+    {
+      "name": "Extract images from complex Pod",
+      "unit": "ops/sec",
+      "value": 1415913
+    },
+    {
+      "name": "Extract images from Deployment",
+      "unit": "ops/sec",
+      "value": 2961427
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+The Image Validator Webhook has been deployed to namespace: {{ .Release.Namespace }}
+
+{{- if .Values.certManager.enabled }}
+
+Certificate Management:
+  ✓ cert-manager is enabled and will manage TLS certificates automatically
+  ✓ Certificate will be renewed before: {{ .Values.certManager.certificate.renewBefore }}
+{{- else }}
+  ⚠ cert-manager is disabled. Make sure you have provided valid TLS certificates.
+{{- end }}
+
+{{- if .Values.registryCredentials.enabled }}
+
+Registry Credentials:
+  ✓ Registry credentials have been configured
+  ✓ The webhook will authenticate with configured registries
+{{- else }}
+  ℹ No registry credentials configured. Public registries will work, but private registries will fail validation.
+  
+  To add credentials, update your values.yaml with:
+  
+  registryCredentials:
+    enabled: true
+    registries:
+      - name: DOCKERHUB
+        url: docker.io
+        username: your-username
+        password: your-password
+{{- end }}
+
+To check the webhook status:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "image-validator-webhook.name" . }}
+
+To view webhook logs:
+
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "image-validator-webhook.name" . }} -f
+
+To test the webhook:
+
+  # This should be DENIED (image doesn't exist)
+  kubectl run test-invalid --image=this-image-does-not-exist:v999
+
+  # This should be ALLOWED (image exists)
+  kubectl run test-valid --image=nginx:latest
+
+To skip validation for a specific resource, add the label:
+
+  kubectl run my-pod --image=my-image --labels="image-validator.io/skip=true"
+
+{{- if not .Values.certManager.enabled }}
+
+⚠ IMPORTANT: Without cert-manager, you need to manually manage certificates.
+   Generate certificates using:
+
+     ./scripts/generate-certs.sh
+     kubectl create secret tls {{ include "image-validator-webhook.tlsSecretName" . }} \
+       --cert=certs/tls.crt \
+       --key=certs/tls.key \
+       -n {{ .Release.Namespace }}
+
+{{- end }}
+
+For more information, visit: {{ .Chart.Home }}

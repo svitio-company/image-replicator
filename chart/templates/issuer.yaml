@@ -1,0 +1,13 @@
+{{- if and .Values.certManager.enabled .Values.certManager.issuer.create }}
+apiVersion: cert-manager.io/v1
+kind: {{ .Values.certManager.issuer.kind }}
+metadata:
+  name: {{ include "image-validator-webhook.issuerName" . }}
+  {{- if eq .Values.certManager.issuer.kind "Issuer" }}
+  namespace: {{ .Release.Namespace }}
+  {{- end }}
+  labels:
+    {{- include "image-validator-webhook.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}

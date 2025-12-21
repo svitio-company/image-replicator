@@ -1,0 +1,100 @@
+# Example values for production deployment
+
+replicaCount: 3
+
+image:
+  repository: myregistry.example.com/image-replicator
+  pullPolicy: Always
+  tag: "1.0.0"
+
+# Registry credentials configuration
+registryCredentials:
+  enabled: true
+  
+  # Docker Hub
+  registries:
+    - name: DOCKERHUB
+      url: docker.io
+      username: myusername
+      password: mytoken
+    
+    # GitHub Container Registry
+    - name: GHCR
+      url: ghcr.io
+      username: mygithubuser
+      token: ghp_xxxxxxxxxxxxx
+    
+    # Google Container Registry
+    - name: GCR
+      url: gcr.io
+      username: _json_key
+      password: |
+        {
+          "type": "service_account",
+          "project_id": "my-project",
+          "private_key_id": "...",
+          "private_key": "...",
+          "client_email": "...",
+          "client_id": "...",
+          "auth_uri": "...",
+          "token_uri": "...",
+          "auth_provider_x509_cert_url": "...",
+          "client_x509_cert_url": "..."
+        }
+  
+  # Default credentials for unknown registries
+  default:
+    url: docker.io
+    username: myusername
+    password: mytoken
+
+# cert-manager configuration
+certManager:
+  enabled: true
+  issuer:
+    create: true
+    kind: ClusterIssuer  # Use ClusterIssuer for cluster-wide access
+  certificate:
+    duration: 8760h  # 1 year
+    renewBefore: 720h  # 30 days
+
+# Webhook configuration
+webhook:
+  failurePolicy: Fail  # Fail deployments if webhook is unreachable
+  timeoutSeconds: 10
+  
+  # Exclude system namespaces
+  namespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: NotIn
+        values:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+          - image-replicator
+          - cert-manager
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Node affinity for specific node pools
+nodeSelector:
+  workload: system
+
+# Tolerate system taints
+tolerations:
+  - key: "workload"
+    operator: "Equal"
+    value: "system"
+    effect: "NoSchedule"

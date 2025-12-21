@@ -1,0 +1,37 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "image-replicator.fullname" . }}
+  labels:
+    {{- include "image-replicator.labels" . | nindent 4 }}
+  {{- if .Values.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "image-replicator.fullname" . }}
+  {{- end }}
+webhooks:
+  - name: validate-images.{{ include "image-replicator.webhookServiceFqdn" . }}
+    admissionReviewVersions: ["v1", "v1beta1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    clientConfig:
+      service:
+        name: {{ include "image-replicator.webhookServiceName" . }}
+        namespace: {{ .Release.Namespace }}
+        path: "/validate"
+        port: {{ .Values.service.port }}
+      {{- if not .Values.certManager.enabled }}
+      {{- if .Values.tls.ca }}
+      caBundle: {{ .Values.tls.ca | b64enc }}
+      {{- end }}
+      {{- end }}
+    namespaceSelector:
+      {{- toYaml .Values.webhook.namespaceSelector | nindent 6 }}
+    objectSelector:
+      matchExpressions:
+        # Allow skipping validation with label image-validator.io/skip=true
+        - key: image-validator.io/skip
+          operator: NotIn
+          values: ["true"]
+    rules:
+      {{- toYaml .Values.webhook.rules | nindent 6 }}

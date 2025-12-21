@@ -1,0 +1,206 @@
+# Default values for image-replicator
+
+# Number of webhook replicas
+replicaCount: 2
+
+image:
+  repository: image-replicator
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+# Image pull secrets for private registries
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 443
+  targetPort: 8443
+
+# Webhook server configuration
+webhook:
+  port: 8443
+  healthPort: 8080
+  # Skip TLS (for development only)
+  skipTLS: false
+  # TLS certificate paths
+  tlsCertPath: /certs/tls.crt
+  tlsKeyPath: /certs/tls.key
+  
+  # Webhook configuration
+  # Ignore = allow pods if webhook fails/unavailable (recommended for production)
+  # Fail = block pods if webhook fails (strict validation)
+  failurePolicy: Ignore
+  # Maximum time to wait for webhook response
+  timeoutSeconds: 10
+  
+  # Namespace selector - customize to exclude specific namespaces if needed
+  # By default, validates all namespaces
+  namespaceSelector: {}
+  
+  # Resources to validate
+  rules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["pods"]
+      scope: "Namespaced"
+    - apiGroups: ["apps"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+      scope: "Namespaced"
+    - apiGroups: ["batch"]
+      apiVersions: ["v1"]
+      operations: ["CREATE", "UPDATE"]
+      resources: ["jobs", "cronjobs"]
+      scope: "Namespaced"
+
+# Registry credentials configuration
+registryCredentials:
+  # Enable the creation of the credentials secret
+  enabled: false
+  
+  # Docker config.json format
+  # dockerConfigJson: |
+  #   {
+  #     "auths": {
+  #       "docker.io": {
+  #         "username": "your-username",
+  #         "password": "your-password"
+  #       }
+  #     }
+  #   }
+  
+  # Individual registry credentials
+  # registries:
+  #   - name: DOCKERHUB
+  #     url: docker.io
+  #     username: your-username
+  #     password: your-password
+  #   - name: GHCR
+  #     url: ghcr.io
+  #     username: your-github-username
+  #     token: ghp_xxxxxxxxxxxxx
+  
+  # Default credentials
+  # default:
+  #   url: docker.io
+  #   username: your-username
+  #   password: your-password
+  
+  # Use existing secret
+  existingSecret: ""
+
+# cert-manager configuration
+certManager:
+  # Use cert-manager for certificate management
+  enabled: true
+  # Issuer configuration
+  issuer:
+    # Create a self-signed issuer
+    create: true
+    # Issuer kind: Issuer or ClusterIssuer
+    kind: Issuer
+    # Issuer name (if not creating)
+    name: ""
+  # Certificate configuration
+  certificate:
+    # Certificate duration
+    duration: 8760h  # 1 year
+    # Certificate renewal before expiration
+    renewBefore: 720h  # 30 days
+    # DNS names for the certificate
+    dnsNames: []
+
+# TLS configuration (when cert-manager is disabled)
+tls:
+  # Provide existing TLS secret name
+  existingSecret: ""
+  # Or provide certificate and key directly
+  # crt: ""
+  # key: ""
+  # ca: ""
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Liveness probe configuration
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: health
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Readiness probe configuration
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: health
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: image-replicator
+          topologyKey: kubernetes.io/hostname
+
+# Priority class
+priorityClassName: ""
+
+# Additional environment variables
+extraEnv: []
+  # - name: DEBUG
+  #   value: "true"
+
+# Additional volumes
+extraVolumes: []
+
+# Additional volume mounts
+extraVolumeMounts: []
