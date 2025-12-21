@@ -3,6 +3,34 @@ import { handleAdmissionReview } from "./admission";
 import { RegistryClient } from "../services/registry-client";
 import type { AdmissionReviewRequest, RegistryAuthConfig } from "../types";
 
+// Helper function to create a minimal admission review request for testing
+function createTestRequest(
+  operation: "CREATE" | "UPDATE" | "DELETE",
+  object: any,
+  kind: string = "Pod"
+): AdmissionReviewRequest {
+  return {
+    apiVersion: "admission.k8s.io/v1",
+    kind: "AdmissionReview",
+    request: {
+      uid: "test-uid-123",
+      kind: { kind, group: "", version: "v1" },
+      resource: { group: "", version: "v1", resource: "pods" },
+      requestKind: { kind, group: "", version: "v1" },
+      requestResource: { group: "", version: "v1", resource: "pods" },
+      namespace: "default",
+      operation,
+      userInfo: {
+        username: "test-user",
+        uid: "test-user-uid",
+        groups: ["system:authenticated"],
+      },
+      object,
+      dryRun: false,
+    },
+  };
+}
+
 describe("handleAdmissionReview", () => {
   let registryClient: RegistryClient;
   let authConfig: RegistryAuthConfig;
@@ -23,8 +51,18 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Deployment", group: "apps", version: "v1" },
           resource: { group: "apps", version: "v1", resource: "deployments" },
+          requestKind: { kind: "Deployment", group: "apps", version: "v1" },
+          requestResource: { group: "apps", version: "v1", resource: "deployments" },
+          namespace: "default",
           operation: "UPDATE",
+          userInfo: {
+            username: "test-user",
+            uid: "test-user-uid",
+            groups: ["system:authenticated"],
+          },
           object: {
+            apiVersion: "apps/v1",
+            kind: "Deployment",
             metadata: { name: "test-deployment" },
             spec: {
               replicas: 3,
@@ -35,6 +73,7 @@ describe("handleAdmissionReview", () => {
               },
             },
           },
+          dryRun: false,
           subResource: "scale",
         } as any,
       };
@@ -55,8 +94,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "DELETE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [{ name: "nginx", image: "nginx:latest" }],
@@ -78,8 +124,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [{ name: "nginx", image: "nginx:latest" }],
@@ -106,8 +159,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "UPDATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [{ name: "nginx", image: "nginx:latest" }],
@@ -135,11 +195,17 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "ConfigMap", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "configmaps" },
+          requestKind: { kind: "ConfigMap", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "configmaps" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "ConfigMap",
             metadata: { name: "test-config" },
-            data: { key: "value" },
-          },
+          } as any,
         },
       };
 
@@ -156,8 +222,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [],
@@ -181,8 +254,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [
@@ -214,8 +294,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [{ name: "invalid", image: "invalid-image:v999" }],
@@ -244,8 +331,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [
@@ -285,8 +379,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [{ name: "nginx", image: "nginx:latest" }],
@@ -312,8 +413,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [{ name: "nginx", image: "nginx:latest" }],
@@ -344,8 +452,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: {
               containers: [{ name: "nginx", image: "nginx:latest" }],
@@ -378,8 +493,15 @@ describe("handleAdmissionReview", () => {
           uid: "test-uid-123",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: { containers: [] },
           },
@@ -400,8 +522,15 @@ describe("handleAdmissionReview", () => {
           uid: "unique-uid-789",
           kind: { kind: "Pod", group: "", version: "v1" },
           resource: { group: "", version: "v1", resource: "pods" },
+          requestKind: { kind: "Pod", group: "", version: "v1" },
+          requestResource: { group: "", version: "v1", resource: "pods" },
+          namespace: "default",
           operation: "CREATE",
+          userInfo: { username: "test", uid: "test", groups: [] },
+          dryRun: false,
           object: {
+            apiVersion: "v1",
+            kind: "Pod",
             metadata: { name: "test-pod" },
             spec: { containers: [] },
           },
