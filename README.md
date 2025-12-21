@@ -153,6 +153,48 @@ DEFAULT_REGISTRY_USERNAME=user
 DEFAULT_REGISTRY_PASSWORD=pass
 ```
 
+## How It Works
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant K8s as Kubernetes API
+    participant Webhook as Image Replicator
+    participant Source as Source Registry<br/>(Docker Hub, GCR, etc.)
+    participant Target as Target Registry<br/>(ACR, ECR, Harbor, etc.)
+
+    User->>K8s: Create Pod/Deployment
+    K8s->>Webhook: AdmissionReview Request
+    
+    Note over Webhook: Extract container images<br/>from Pod spec
+    
+    loop For each image
+        Webhook->>Source: Check image exists
+        Source-->>Webhook: Image found
+        
+        Webhook->>Target: Check if already cloned
+        
+        alt Image exists in target
+            Target-->>Webhook: Already exists
+        else Image missing in target
+            Target-->>Webhook: Not found
+            
+            Note over Webhook,Target: Clone image
+            Webhook->>Source: GET manifest & layers
+            Source-->>Webhook: Image data
+            Webhook->>Target: PUT manifest & layers
+            Target-->>Webhook: Image pushed
+            
+            Note over Webhook: Increment clone metrics
+        end
+    end
+    
+    Webhook->>K8s: AdmissionReview Response (Allow)
+    K8s->>User: Pod created successfully
+    
+    Note over Webhook: Expose Prometheus metrics<br/>at /metrics endpoint
+```
+
 ## Skipping Validation
 
 To skip validation for specific resources, add the label:
@@ -362,6 +404,43 @@ curl -X POST https://localhost:8443/validate \
    ```bash
    kubectl rollout restart deployment/image-replicator -n image-replicator
    ```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Quick Start for Contributors
+
+```bash
+# Fork and clone
+git clone https://github.com/YOUR_USERNAME/image-replicator.git
+cd image-replicator
+
+# Install dependencies
+bun install
+
+# Run tests
+bun test
+
+# Type check
+bun run type-check
+
+# Make your changes and submit a PR
+```
+
+## 📜 Code of Conduct
+
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+
+## 🔒 Security
+
+See [SECURITY.md](SECURITY.md) for our security policy and how to report vulnerabilities.
+
+## 🙏 Acknowledgments
+
+- Built with [Bun](https://bun.sh/) for high performance
+- Inspired by Kubernetes best practices and CNCF projects
+- Thanks to all [contributors](https://github.com/svitio-company/image-replicator/graphs/contributors)
 
 ## License
 
