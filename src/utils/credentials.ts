@@ -1,10 +1,25 @@
 import type { RegistryCredentials, DockerConfigJson, RegistryAuthConfig } from "../types";
 
+const CREDENTIALS_PATH = "/credentials/config.json";
+
 /**
  * Load registry credentials from environment variables or Kubernetes secrets
  */
 export async function loadCredentials(): Promise<RegistryAuthConfig> {
   const credentials = new Map<string, RegistryCredentials>();
+
+  // Check if credentials file exists (mounted from secret)
+  const credFile = Bun.file(CREDENTIALS_PATH);
+  const fileExists = await credFile.exists();
+
+  if (!fileExists && !Bun.env.DOCKER_CONFIG_JSON) {
+    console.warn(`⚠️  Credentials file not found at ${CREDENTIALS_PATH}`);
+    console.warn(`⚠️  DOCKER_CONFIG_JSON environment variable also not set`);
+    console.warn(`⚠️  Only public registries will work without authentication`);
+    console.warn(`⚠️  Mount registry-credentials secret to enable private registry access`);
+  } else if (fileExists) {
+    console.log(`✓ Credentials file found at ${CREDENTIALS_PATH}`);
+  }
 
   // Load from environment variable (DOCKER_CONFIG_JSON)
   const dockerConfigJson = Bun.env.DOCKER_CONFIG_JSON;
@@ -49,14 +64,15 @@ export async function loadCredentials(): Promise<RegistryAuthConfig> {
   // Load default credentials
   let defaultCredentials: RegistryCredentials | undefined;
   const defaultUsername = Bun.env.DEFAULT_REGISTRY_USERNAME;
-  const defaultPassword = Bun.env.DEFAULT_REGISTRY_PASSWORD || Bun.env.DEFAULT_REGISTRY_TOKEN;
+  const defaultPassword = Bun.env.DEFAULT_REGISTRY_PASSWORD;
+  const defaultToken = Bun.env.DEFAULT_REGISTRY_TOKEN;
   const defaultRegistry = Bun.env.DEFAULT_REGISTRY_URL || "docker.io";
 
-  if (defaultUsername && defaultPassword) {
+  if (defaultUsername && (defaultPassword || defaultToken)) {
     defaultCredentials = {
       registry: defaultRegistry,
       username: defaultUsername,
-      password: defaultPassword,
+      password: defaultToken || defaultPassword || "",
     };
   }
 

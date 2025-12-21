@@ -6,3 +6,8 @@ certs
 .env
 .env.local
 .env.*.local
+
+# Test coverage
+coverage/
+coverage-output.txt
+file-coverage.txt

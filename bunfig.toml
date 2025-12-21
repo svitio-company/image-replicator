@@ -1,0 +1,9 @@
+[test]
+# Require minimum 80% line coverage, 80% function coverage
+coverageThreshold = { line = 0.80, function = 0.80 }
+
+# Generate lcov report for Codecov
+coverageReporter = ["text", "lcov"]
+
+# Skip test files from coverage
+coverageSkipTestFiles = true

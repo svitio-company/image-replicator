@@ -35,6 +35,43 @@ if (authConfig.defaultCredentials) {
   );
 }
 
+// Validate credentials configuration
+if (authConfig.credentials.size > 0 || authConfig.defaultCredentials) {
+  console.log(`✓ Registry credentials configured:`);
+  for (const [registry] of authConfig.credentials) {
+    console.log(`  - ${registry}`);
+  }
+  if (authConfig.defaultCredentials) {
+    console.log(`  - Default: ${authConfig.defaultCredentials.registry}`);
+  }
+} else {
+  console.warn(`⚠️  No registry credentials configured`);
+  console.warn(`⚠️  - Private source registries (Docker Hub, GHCR, etc.) will fail`);
+  console.warn(`⚠️  - Only public registries will be accessible`);
+}
+
+// Validate TARGET_REGISTRY credentials if replication is enabled
+if (TARGET_REGISTRY) {
+  const normalizedTarget = TARGET_REGISTRY.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  const hasTargetCreds = authConfig.credentials.has(normalizedTarget) || 
+                         authConfig.defaultCredentials?.registry === normalizedTarget;
+  
+  if (!hasTargetCreds) {
+    console.warn(`⚠️  WARNING: Image replication enabled but no credentials for target registry!`);
+    console.warn(`⚠️  - Target registry: ${TARGET_REGISTRY}`);
+    console.warn(`⚠️  - Replication will fail without authentication`);
+    console.warn(`⚠️  - Add credentials for "${normalizedTarget}" to registry-credentials secret`);
+    
+    // Optionally make it fatal
+    if (Bun.env.REQUIRE_CREDENTIALS === "true") {
+      console.error(`❌ REQUIRE_CREDENTIALS=true: Exiting due to missing target registry credentials`);
+      process.exit(1);
+    }
+  } else {
+    console.log(`✓ Target registry credentials verified: ${TARGET_REGISTRY}`);
+  }
+}
+
 // Create registry client
 const registryClient = new RegistryClient(authConfig, TARGET_REGISTRY, REGISTRY_TIMEOUT);
 
