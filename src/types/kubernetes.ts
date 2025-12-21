@@ -105,7 +105,7 @@ export interface CronJobSpec {
 export interface DeploymentSpec {
   template: PodTemplateSpec;
   replicas?: number;
-  selector: object;
+  selector?: object;
 }
 
 export interface StatefulSetSpec {

@@ -112,7 +112,7 @@ const webhookServer = Bun.serve({
           });
         }
 
-        const admissionReview: AdmissionReviewRequest = await req.json();
+        const admissionReview = (await req.json()) as AdmissionReviewRequest;
 
         // Validate request structure
         if (!admissionReview.request?.uid) {
