@@ -4,6 +4,14 @@
 
 A Kubernetes Validating Admission Webhook built with Bun that validates container images exist in registries and replicates them to a target registry before allowing pods to be created.
 
+## Use Cases
+
+### Development Cluster Image Tracking
+Your dev cluster isn't air-gapped but you want to catch all images being deployed, even when hardcoded in system components like monitoring agents, CNI plugins, or operators. Image Replicator logs every image reference passing through the cluster, giving you a complete inventory.
+
+### Air-Gapped Production Environments
+Replicate all container images to your internal registry before pods can start. Perfect for secure environments where external registry access is blocked by firewall rules or network policies.
+
 ## Features
 
 - **Image Existence Validation**: Verifies all container images exist in their registries before pods are scheduled
