@@ -33,9 +33,9 @@ jobs:
           bun test --coverage > coverage-output.txt 2>&1 || echo "COVERAGE_FAILED=true" >> $GITHUB_OUTPUT
           cat coverage-output.txt
           
-          # Extract coverage percentages
-          FUNC_COV=$(grep "All files" coverage-output.txt | awk '{print $2}' | tr -d '%')
-          LINE_COV=$(grep "All files" coverage-output.txt | awk '{print $3}' | tr -d '%')
+          # Extract coverage percentages (columns 3 and 5 from the table)
+          FUNC_COV=$(grep "All files" coverage-output.txt | awk '{print $3}')
+          LINE_COV=$(grep "All files" coverage-output.txt | awk '{print $5}')
           
           echo "function_coverage=$FUNC_COV" >> $GITHUB_OUTPUT
           echo "line_coverage=$LINE_COV" >> $GITHUB_OUTPUT
