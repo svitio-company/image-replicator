@@ -34,14 +34,20 @@ jobs:
       - name: Run benchmarks
         run: bun run benchmark
 
+      - name: Download previous benchmark data
+        uses: actions/cache@v4
+        with:
+          path: ./cache
+          key: ${{ runner.os }}-benchmark
+
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         if: github.event_name == 'push'
         with:
           tool: 'customBiggerIsBetter'
           output-file-path: benchmark-results.json
+          external-data-json-path: ./cache/benchmark-data.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          auto-push: true
           comment-on-alert: true
           alert-threshold: '150%'
           fail-on-alert: false
@@ -58,7 +64,7 @@ jobs:
             comment += '| Benchmark | Performance |\n';
             comment += '|-----------|-------------|\n';
             
-            results.benchmarks.forEach(b => {
+            results.forEach(b => {
               comment += `| ${b.name} | ${b.value.toLocaleString()} ops/sec |\n`;
             });
             
