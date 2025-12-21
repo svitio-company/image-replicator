@@ -184,7 +184,14 @@ class MetricsCollector {
     if (entries.length === 0) return "";
     
     const formatted = entries
-      .map(([key, value]) => `${key}="${value.replace(/"/g, '\\"')}"`)
+      .map(([key, value]) => {
+        // Properly escape label values for Prometheus format
+        const escaped = value
+          .replace(/\\/g, '\\\\')  // Escape backslashes first
+          .replace(/\n/g, '\\n')     // Escape newlines
+          .replace(/"/g, '\\"');    // Escape quotes
+        return `${key}="${escaped}"`;
+      })
       .join(",");
     
     return `{${formatted}}`;

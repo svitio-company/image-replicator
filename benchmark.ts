@@ -139,14 +139,12 @@ async function runBenchmarks() {
 
   console.log("└─────────────────────────────────────────────┴──────────────┴──────────────┴──────────────┴──────────────┘");
 
-  // Export results for GitHub Actions
-  const jsonResults = {
-    benchmarks: results.map((r) => ({
-      name: r.name,
-      unit: "ops/sec",
-      value: r.ops_per_sec,
-    })),
-  };
+  // Export results for GitHub Actions (array format required by benchmark-action)
+  const jsonResults = results.map((r) => ({
+    name: r.name,
+    unit: "ops/sec",
+    value: r.ops_per_sec,
+  }));
 
   await Bun.write("benchmark-results.json", JSON.stringify(jsonResults, null, 2));
   console.log("\n✅ Results saved to benchmark-results.json");

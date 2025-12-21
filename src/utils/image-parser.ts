@@ -88,7 +88,7 @@ export function getRegistryApiUrl(registry: string): string {
     return `https://${registry}`;
   }
   
-  if (registry.includes("ghcr.io")) {
+  if (registry === "ghcr.io" || registry.endsWith(".pkg.github.com")) {
     return "https://ghcr.io";
   }
 
@@ -112,7 +112,7 @@ export function getAuthRealm(registry: string): string {
     return "https://gcr.io/v2/token";
   }
   
-  if (registry.includes("ghcr.io")) {
+  if (registry === "ghcr.io" || registry.endsWith(".pkg.github.com")) {
     return "https://ghcr.io/token";
   }
 
