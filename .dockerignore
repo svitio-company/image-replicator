@@ -1,8 +1,15 @@
+# Dependencies
 node_modules
-dist
+
+# Build output (needed for Dockerfile.prebuilt)
+# dist is required for prebuilt Docker image
+
+# Local development
 certs
 *.log
-.DS_Store
 .env
 .env.*
 !.env.example
+
+# System files
+.DS_Store
