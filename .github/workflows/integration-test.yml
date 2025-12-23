@@ -50,12 +50,17 @@ jobs:
           helm install image-cloner-operator ./chart \
             --set image.repository=localhost:5001/image-cloner-operator \
             --set image.tag=test \
-            --wait --timeout=5m
+            --set certManager.certificate.privateKey.rotationPolicy=Always \
+            --debug
+
+      - name: Wait for deployment
+        run: |
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=image-replicator --timeout=300s
 
       - name: Verify deployment
         run: |
           kubectl get pods -A
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=image-cloner-operator --timeout=300s
+          kubectl get all -n default
 
       - name: Show logs on failure
         if: failure()
