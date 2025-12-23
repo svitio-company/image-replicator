@@ -29,11 +29,10 @@ jobs:
           registry_port: 5001
           registry_enable_delete: true
 
-      - name: Build Docker image
-        run: docker build -t localhost:5001/image-cloner-operator:test .
-
-      - name: Push image to local registry
-        run: docker push localhost:5001/image-cloner-operator:test
+      - name: Build and push Docker image
+        run: |
+          docker build -t localhost:5001/image-cloner-operator:test .
+          docker push localhost:5001/image-cloner-operator:test
 
       - name: Install cert-manager
         run: |
@@ -48,7 +47,7 @@ jobs:
       - name: Install Helm chart
         run: |
           helm install image-cloner-operator ./chart \
-            --set image.repository=localhost:5001/image-cloner-operator \
+            --set image.repository=my-registry:5001/image-cloner-operator \
             --set image.tag=test \
             --set certManager.certificate.privateKey.rotationPolicy=Always \
             --debug
