@@ -52,7 +52,12 @@ jobs:
             --set certManager.certificate.privateKey.rotationPolicy=Always \
             --debug
 
+      - name: Wait for deployment
+        run: |
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=image-replicator --timeout=300s
+
       - name: Check deployment status
+        if: always()
         run: |
           echo "=== Pods ==="
           kubectl get pods -A
@@ -68,10 +73,6 @@ jobs:
           echo ""
           echo "=== Events ==="
           kubectl get events -n default --sort-by='.lastTimestamp'
-
-      - name: Wait for deployment
-        run: |
-          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=image-replicator --timeout=300s
 
       - name: Verify deployment
         run: |
