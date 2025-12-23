@@ -34,11 +34,11 @@ Registry Credentials:
 
 To check the webhook status:
 
-  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "image-validator-webhook.name" . }}
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "image-replicator.name" . }}
 
 To view webhook logs:
 
-  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "image-validator-webhook.name" . }} -f
+  kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "image-replicator.name" . }} -f
 
 To test the webhook:
 
@@ -58,7 +58,7 @@ To skip validation for a specific resource, add the label:
    Generate certificates using:
 
      ./scripts/generate-certs.sh
-     kubectl create secret tls {{ include "image-validator-webhook.tlsSecretName" . }} \
+     kubectl create secret tls {{ include "image-replicator.tlsSecretName" . }} \
        --cert=certs/tls.crt \
        --key=certs/tls.key \
        -n {{ .Release.Namespace }}

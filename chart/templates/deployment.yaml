@@ -1,15 +1,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "image-validator-webhook.fullname" . }}
+  name: {{ include "image-replicator.fullname" . }}
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- include "image-validator-webhook.labels" . | nindent 4 }}
+    {{- include "image-replicator.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "image-validator-webhook.selectorLabels" . | nindent 6 }}
+      {{- include "image-replicator.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
@@ -18,13 +18,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "image-validator-webhook.selectorLabels" . | nindent 8 }}
+        {{- include "image-replicator.selectorLabels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "image-validator-webhook.serviceAccountName" . }}
+      serviceAccountName: {{ include "image-replicator.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -59,7 +59,7 @@ spec:
           {{- if or .Values.registryCredentials.enabled .Values.registryCredentials.existingSecret }}
           envFrom:
             - secretRef:
-                name: {{ include "image-validator-webhook.credentialsSecretName" . }}
+                name: {{ include "image-replicator.credentialsSecretName" . }}
                 optional: true
           {{- end }}
           volumeMounts:
@@ -78,7 +78,7 @@ spec:
       volumes:
         - name: certs
           secret:
-            secretName: {{ include "image-validator-webhook.tlsSecretName" . }}
+            secretName: {{ include "image-replicator.tlsSecretName" . }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
