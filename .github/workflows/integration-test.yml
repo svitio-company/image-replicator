@@ -35,6 +35,16 @@ jobs:
       - name: Push image to local registry
         run: docker push localhost:5001/image-cloner-operator:test
 
+      - name: Install cert-manager
+        run: |
+          helm install \
+            cert-manager oci://quay.io/jetstack/charts/cert-manager \
+            --version v1.19.2 \
+            --namespace cert-manager \
+            --create-namespace \
+            --set crds.enabled=true \
+            --wait --timeout=5m
+
       - name: Install Helm chart
         run: |
           helm install image-cloner-operator ./chart \
