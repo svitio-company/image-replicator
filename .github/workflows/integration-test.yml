@@ -1,0 +1,55 @@
+name: Integration Test
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  integration-test:
+    name: Test Deployment on Kind
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create Kind Cluster with Registry
+        id: kind
+        uses: helm/kind-action@v1
+        with:
+          registry: true
+          registry_name: my-registry
+          registry_port: 5001
+          registry_enable_delete: true
+
+      - name: Build Docker image
+        run: docker build -t localhost:5001/image-cloner-operator:test .
+
+      - name: Push image to local registry
+        run: docker push localhost:5001/image-cloner-operator:test
+
+      - name: Install Helm chart
+        run: |
+          helm install image-cloner-operator ./chart \
+            --set image.repository=localhost:5001/image-cloner-operator \
+            --set image.tag=test \
+            --wait --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -A
+          kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=image-cloner-operator --timeout=300s
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pods -l app.kubernetes.io/name=image-cloner-operator
+          kubectl logs -l app.kubernetes.io/name=image-cloner-operator --all-containers=true
