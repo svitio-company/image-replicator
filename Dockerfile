@@ -29,4 +29,4 @@ EXPOSE 8443 8080
 
 # Run the application
 # Distroless runs as non-root user (bun) by default
-CMD ["bun", "index.js"]
+ENTRYPOINT [ "bun", "run", "index.js" ]

@@ -68,11 +68,8 @@ jobs:
           echo "=== Pod Details ==="
           kubectl describe pods -l app.kubernetes.io/name=image-replicator -n default
           echo ""
-          echo "=== Pod Logs (First 100 lines) ==="
-          kubectl logs -l app.kubernetes.io/name=image-replicator -n default --all-containers=true | head -100 || true
-          echo ""
-          echo "=== Pod Logs (Last 100 lines) ==="
-          kubectl logs -l app.kubernetes.io/name=image-replicator -n default --all-containers=true --tail=100 || true
+          echo "=== Pod Logs ==="
+          kubectl logs -l app.kubernetes.io/name=image-replicator -n default --all-containers=true --tail=200 || true
           echo ""
           echo "=== Events ==="
           kubectl get events -n default --sort-by='.lastTimestamp'
