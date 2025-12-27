@@ -49,7 +49,12 @@ jobs:
           helm install image-replicator ./chart \
             --set image.repository=my-registry:5001/image-cloner-operator \
             --set image.tag=test \
+            --set extraEnv[0].name=TARGET_REGISTRY \
+            --set extraEnv[0].value=my-registry:5001 \
             --set certManager.certificate.privateKey.rotationPolicy=Always \
+            --set webhook.namespaceSelector.matchExpressions[0].key=kubernetes.io/metadata.name \
+            --set webhook.namespaceSelector.matchExpressions[0].operator=NotIn \
+            --set-string 'webhook.namespaceSelector.matchExpressions[0].values={default\,kube-system\,cert-manager}' \
             --debug
 
       - name: Wait for deployment
@@ -79,28 +84,19 @@ jobs:
           kubectl get pods -A
           kubectl get all -n default
 
-      - name: Configure webhook to use local registry
-        run: |
-          helm upgrade image-replicator ./chart \
-            --set image.repository=my-registry:5001/image-cloner-operator \
-            --set image.tag=test \
-            --set extraEnv[0].name=TARGET_REGISTRY \
-            --set extraEnv[0].value=my-registry:5001 \
-            --set certManager.certificate.privateKey.rotationPolicy=Always \
-            --wait --timeout=300s
-
-      - name: Wait for updated deployment
-        run: |
-          kubectl rollout status deployment/image-replicator --timeout=300s
-
       - name: Test webhook with nginx pod
         run: |
+          echo "=== Creating test namespace ==="
+          kubectl create namespace test-namespace || true
+          
+          echo ""
           echo "=== Creating test nginx pod ==="
           cat <<EOF | kubectl apply -f -
           apiVersion: v1
           kind: Pod
           metadata:
             name: test-nginx
+            namespace: test-namespace
             labels:
               app: test-nginx
           spec:
@@ -113,15 +109,15 @@ jobs:
           
           echo ""
           echo "=== Waiting for pod to be created ==="
-          kubectl wait --for=condition=ready pod/test-nginx --timeout=120s || true
+          kubectl wait --for=condition=ready pod/test-nginx -n test-namespace --timeout=120s || true
           
           echo ""
           echo "=== Pod Status ==="
-          kubectl get pod test-nginx -o wide
+          kubectl get pod test-nginx -n test-namespace -o wide
           
           echo ""
           echo "=== Pod Events ==="
-          kubectl describe pod test-nginx
+          kubectl describe pod test-nginx -n test-namespace
 
       - name: Verify image was copied to local registry
         run: |
@@ -144,17 +140,12 @@ jobs:
       - name: Check webhook logs
         run: |
           echo "=== Webhook Logs (Last 100 lines) ==="
-          kubectl logs -l app.kubernetes.io/name=image-replicator -n default --tail=100 --all-containers=true
-
-      - name: Verify pod is running
-        run: |
-          # Verify the pod is actually running
-          POD_STATUS=$(kubectl get pod test-nginx -o jsonpath='{.status.phase}')
+          kubectl logs -l app.kubernetes.io/name=imn test-namespace -o jsonpath='{.status.phase}')
           echo "Pod status: $POD_STATUS"
           
           if [ "$POD_STATUS" != "Running" ]; then
             echo "ERROR: Pod is not running!"
-            kubectl describe pod test-nginx
+            kubectl describe pod test-nginx -n test-namespace
             exit 1
           fi
           
@@ -163,11 +154,16 @@ jobs:
       - name: Test pod functionality
         run: |
           echo "=== Testing nginx responds ==="
-          kubectl exec test-nginx -- curl -s http://localhost || echo "Curl failed"
+          kubectl exec test-nginx -n test-namespace -- curl -s http://localhost || echo "Curl failed"
           
           echo ""
           echo "=== Nginx version ==="
-          kubectl exec test-nginx -- nginx -v
+          kubectl exec test-nginx -n test-namespace -- nginx -v
+
+      - name: Cleanup test resources
+        if: always()
+        run: |
+          kubectl delete namespace test-namespaceinx -v
 
       - name: Cleanup test resources
         if: always()
