@@ -84,7 +84,8 @@ jobs:
           helm upgrade image-replicator ./chart \
             --set image.repository=my-registry:5001/image-cloner-operator \
             --set image.tag=test \
-            --set targetRegistry=my-registry:5001 \
+            --set extraEnv[0].name=TARGET_REGISTRY \
+            --set extraEnv[0].value=my-registry:5001 \
             --set certManager.certificate.privateKey.rotationPolicy=Always \
             --wait --timeout=300s
 
