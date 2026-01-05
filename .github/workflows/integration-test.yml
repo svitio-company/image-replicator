@@ -141,6 +141,12 @@ jobs:
           echo "Verifying nginx:1.25-alpine manifest:"
           curl -s -I http://my-registry:5001/v2/library/nginx/manifests/1.25-alpine || echo "Manifest not found"
 
+      - name: Show replicator logs
+        if: always()
+        run: |
+          echo "=== Pod Logs ==="
+          kubectl logs -l app.kubernetes.io/name=image-replicator -n default --all-containers=true --tail=200 || true
+
       - name: Check webhook logs
         run: |
           echo "=== Webhook Logs (Last 100 lines) ==="
