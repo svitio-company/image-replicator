@@ -293,28 +293,8 @@ export class RegistryClient {
     logger.info(`Cloning image from source to target`, { sourceImage, targetImage });
 
     try {
-      // Pre-flight connectivity checks
-      logger.debug("Pre-flight: Testing connectivity to source registry", { registry: sourceRef.registry });
-      const sourceConnectivity = await this.testRegistryConnectivity(sourceRef.registry);
-      if (!sourceConnectivity.success) {
-        throw new Error(
-          `Cannot connect to source registry ${sourceRef.registry}: ${sourceConnectivity.error}. ` +
-          `Please check network connectivity, DNS resolution, and firewall rules.`
-        );
-      }
-      
-      logger.debug("Pre-flight: Testing connectivity to target registry", { registry: targetRef.registry });
-      const targetConnectivity = await this.testRegistryConnectivity(targetRef.registry);
-      if (!targetConnectivity.success) {
-        throw new Error(
-          `Cannot connect to target registry ${targetRef.registry}: ${targetConnectivity.error}. ` +
-          `Please check network connectivity, DNS resolution, and firewall rules.`
-        );
-      }
-      
-      logger.debug("Pre-flight checks passed, proceeding with image clone");
-
       // Use skopeo copy for efficient registry-to-registry transfer
+      // Skopeo will handle connectivity and authentication errors directly
       const args = ["copy", `docker://${sourceImage}`, `docker://${targetImage}`];
 
       // Add source credentials
