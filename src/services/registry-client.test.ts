@@ -332,4 +332,53 @@ describe("RegistryClient - Skopeo Integration", () => {
       Bun.spawn = originalSpawn;
     });
   });
+
+  describe("security - credential sanitization", () => {
+    test("should not log passwords in clear text", async () => {
+      const authConfigWithCreds = {
+        credentials: new Map([
+          ["docker.io", { registry: "docker.io", username: "testuser", password: "secretpassword123" }],
+          ["myregistry.io", { registry: "myregistry.io", username: "targetuser", password: "topsecret456" }],
+        ]),
+      };
+      
+      const client = new RegistryClient(authConfigWithCreds);
+      
+      // Enable debug logging temporarily
+      const { logger } = await import("../utils/logger");
+      const wasDebugEnabled = (logger as any).debugEnabled;
+      logger.setDebugEnabled(true);
+      
+      // Capture debug logs
+      const debugLogs: any[] = [];
+      const originalDebug = console.debug;
+      console.debug = mock((msg: string) => {
+        debugLogs.push(msg);
+      }) as any;
+      
+      Bun.spawn = mock(() => {
+        return mockSpawn(0);
+      }) as any;
+
+      await client.cloneImage("nginx:latest", "myregistry.io");
+      
+      // Restore console and logger state
+      console.debug = originalDebug;
+      logger.setDebugEnabled(wasDebugEnabled);
+      
+      // Check that passwords are not in the logs
+      const allLogs = debugLogs.join(" ");
+      expect(allLogs).not.toContain("secretpassword123");
+      expect(allLogs).not.toContain("topsecret456");
+      
+      // But usernames should still be visible for debugging
+      expect(allLogs).toContain("testuser");
+      expect(allLogs).toContain("targetuser");
+      
+      // And passwords should be masked
+      expect(allLogs).toContain("***");
+      
+      Bun.spawn = originalSpawn;
+    });
+  });
 });
