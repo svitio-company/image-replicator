@@ -2,24 +2,18 @@ import type {
   ImageReference,
   ImageValidationResult,
   RegistryAuthConfig,
-  RegistryTokenResponse,
 } from "../types";
-import {
-  parseImageReference,
-  getRegistryApiUrl,
-  parseWwwAuthenticate,
-} from "../utils/image-parser";
+import { parseImageReference } from "../utils/image-parser";
 import { getCredentialsForRegistry } from "../utils/credentials";
 import { metrics, METRICS } from "./metrics";
 import { logger } from "../utils/logger";
 
 /**
- * Registry client for checking image existence
+ * Registry client using Skopeo for container image operations
+ * Skopeo provides battle-tested, production-ready image manipulation
  * Supports Docker Hub, GCR, GHCR, ACR, ECR, and generic registries
  */
 export class RegistryClient {
-  private tokenCache = new Map<string, { token: string; expiresAt: number }>();
-
   constructor(
     private authConfig: RegistryAuthConfig,
     private targetRegistry?: string,
@@ -87,57 +81,46 @@ export class RegistryClient {
   }
 
   /**
-   * Verify that a manifest exists for the image
+   * Verify that a manifest exists for the image using skopeo inspect
    */
   private async verifyManifest(imageRef: ImageReference): Promise<boolean> {
     const startTime = Date.now();
-    const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
     const reference = imageRef.digest || imageRef.tag || "latest";
+    
+    // Build full image reference for skopeo
+    const fullImage = imageRef.digest
+      ? `${imageRef.registry}/${imageRef.repository}@${imageRef.digest}`
+      : `${imageRef.registry}/${imageRef.repository}:${reference}`;
 
-    // Build the manifest URL
-    const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
-    logger.debug("Verifying manifest", { manifestUrl, registry: imageRef.registry });
+    logger.debug("Verifying manifest with skopeo", { fullImage, registry: imageRef.registry });
 
     try {
-      // First, try without auth to see if we need authentication
-      let response = await fetch(manifestUrl, {
-        signal: AbortSignal.timeout(this.timeout),
-        method: "HEAD",
-        headers: {
-          Accept: [
-            "application/vnd.docker.distribution.manifest.v2+json",
-            "application/vnd.docker.distribution.manifest.list.v2+json",
-            "application/vnd.oci.image.manifest.v1+json",
-            "application/vnd.oci.image.index.v1+json",
-          ].join(", "),
-        },
-      });
-
-      // If we get 401, we need to authenticate
-      if (response.status === 401) {
-        const wwwAuth = response.headers.get("WWW-Authenticate");
-        if (wwwAuth) {
-          const token = await this.getToken(imageRef, wwwAuth);
-          if (token) {
-            response = await fetch(manifestUrl, {
-              signal: AbortSignal.timeout(this.timeout),
-              method: "HEAD",
-              headers: {
-                Accept: [
-                  "application/vnd.docker.distribution.manifest.v2+json",
-                  "application/vnd.docker.distribution.manifest.list.v2+json",
-                  "application/vnd.oci.image.manifest.v1+json",
-                  "application/vnd.oci.image.index.v1+json",
-                ].join(", "),
-                Authorization: `Bearer ${token}`,
-              },
-            });
-          }
-        }
+      const args = ["inspect", `docker://${fullImage}`];
+      
+      // Add credentials if available
+      const creds = getCredentialsForRegistry(this.authConfig, imageRef.registry);
+      if (creds) {
+        args.push("--creds", `${creds.username}:${creds.password}`);
       }
 
-      // 200 = exists, 404 = not found
-      if (response.status === 200) {
+      // Add insecure flag if registry is in the insecure list
+      if (this.insecureRegistries.includes(imageRef.registry)) {
+        args.push("--tls-verify=false");
+      }
+
+      const proc = Bun.spawn(["skopeo", ...args], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      // Wait for process to complete with timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("timeout")), this.timeout);
+      });
+
+      const result = await Promise.race([proc.exited, timeoutPromise]);
+
+      if (result === 0) {
         const duration = (Date.now() - startTime) / 1000;
         metrics.observeHistogram(METRICS.REGISTRY_REQUEST_DURATION, duration, {
           registry: imageRef.registry,
@@ -146,7 +129,11 @@ export class RegistryClient {
         return true;
       }
 
-      if (response.status === 404) {
+      // Read stderr for error details
+      const stderr = await new Response(proc.stderr).text();
+      
+      // 404-like errors - image not found
+      if (stderr.includes("manifest unknown") || stderr.includes("not found")) {
         const duration = (Date.now() - startTime) / 1000;
         metrics.observeHistogram(METRICS.REGISTRY_REQUEST_DURATION, duration, {
           registry: imageRef.registry,
@@ -155,100 +142,13 @@ export class RegistryClient {
         return false;
       }
 
-      // Handle other errors with more context
-      throw new Error(
-        `Registry ${imageRef.registry} returned status ${response.status} for ${imageRef.repository}:${reference}: ${response.statusText}`
-      );
+      // Other errors
+      throw new Error(`Skopeo inspect failed: ${stderr.trim()}`);
     } catch (error) {
-      // Handle timeout errors
-      if (error instanceof Error && error.name === "AbortError") {
+      if (error instanceof Error && error.message === "timeout") {
         throw new Error(`Request to ${imageRef.registry} timed out after ${this.timeout}ms`);
       }
-      
-      // Handle network errors
-      if (error instanceof TypeError) {
-        throw new Error(`Network error connecting to ${imageRef.registry}: ${error.message}`);
-      }
-      
-      // Re-throw other errors
       throw error;
-    }
-  }
-
-  /**
-   * Get an authentication token for the registry
-   */
-  private async getToken(
-    imageRef: ImageReference,
-    wwwAuthHeader: string
-  ): Promise<string | null> {
-    const authParams = parseWwwAuthenticate(wwwAuthHeader);
-    if (!authParams) {
-      logger.warn("Could not parse WWW-Authenticate header", { wwwAuthHeader });
-      return null;
-    }
-
-    // Build cache key
-    const cacheKey = `${imageRef.registry}:${imageRef.repository}`;
-
-    // Check cache
-    const cached = this.tokenCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      metrics.incrementCounter(METRICS.TOKEN_CACHE_HITS, {
-        registry: imageRef.registry,
-      });
-      return cached.token;
-    }
-
-    metrics.incrementCounter(METRICS.TOKEN_CACHE_MISSES, {
-      registry: imageRef.registry,
-    });
-
-    // Build token request URL
-    const tokenUrl = new URL(authParams.realm);
-    if (authParams.service) {
-      tokenUrl.searchParams.set("service", authParams.service);
-    }
-    tokenUrl.searchParams.set("scope", `repository:${imageRef.repository}:pull`);
-
-    // Get credentials for this registry
-    const creds = getCredentialsForRegistry(this.authConfig, imageRef.registry);
-
-    const headers: Record<string, string> = {};
-    if (creds) {
-      const auth = btoa(`${creds.username}:${creds.password}`);
-      headers["Authorization"] = `Basic ${auth}`;
-    }
-
-    try {
-      // Token requests should be fast - use shorter timeout (10s or configured timeout, whichever is smaller)
-      const tokenTimeout = Math.min(10000, this.timeout);
-      const response = await fetch(tokenUrl.toString(), { 
-        headers,
-        signal: AbortSignal.timeout(tokenTimeout),
-      });
-
-      if (!response.ok) {
-        logger.error("Token request failed", undefined, { status: response.status, statusText: response.statusText, registry: imageRef.registry });
-        return null;
-      }
-
-      const data = (await response.json()) as RegistryTokenResponse;
-      const token = data.token || data.access_token;
-
-      if (token) {
-        // Cache the token (default 5 minutes if not specified)
-        const expiresIn = data.expires_in || 300;
-        this.tokenCache.set(cacheKey, {
-          token,
-          expiresAt: Date.now() + expiresIn * 1000 - 30000, // 30s buffer
-        });
-      }
-
-      return token || null;
-    } catch (error) {
-      logger.error("Failed to get token", error, { registry: imageRef.registry });
-      return null;
     }
   }
 
@@ -261,48 +161,85 @@ export class RegistryClient {
   }
 
   /**
-   * Clear the token cache
+   * Clear the token cache (no-op for Skopeo, kept for API compatibility)
    */
   clearTokenCache(): void {
-    this.tokenCache.clear();
+    // Skopeo handles authentication internally, no cache to clear
   }
 
   /**
-   * Test connectivity to a registry
+   * Test connectivity to a registry using skopeo
    */
   async testRegistryConnectivity(registry: string): Promise<{
     success: boolean;
     error?: string;
   }> {
-    const registryUrl = getRegistryApiUrl(registry, this.insecureRegistries);
-    const testUrl = `${registryUrl}/v2/`;
-    
-    logger.debug("Testing connectivity to registry", { registry, testUrl });
+    logger.debug("Testing connectivity to registry", { registry });
     
     try {
-      const response = await fetch(testUrl, {
-        method: "GET",
-        signal: AbortSignal.timeout(10000), // 10 second timeout for connectivity test
+      // Try to list tags for a common repository
+      // This is a lightweight operation that tests connectivity
+      const testImage = `${registry}/library/busybox:latest`;
+      const args = ["inspect", `docker://${testImage}`];
+
+      // Add credentials if available
+      const creds = getCredentialsForRegistry(this.authConfig, registry);
+      if (creds) {
+        args.push("--creds", `${creds.username}:${creds.password}`);
+      }
+
+      // Add insecure flag if registry is in the insecure list
+      if (this.insecureRegistries.includes(registry)) {
+        args.push("--tls-verify=false");
+      }
+
+      const proc = Bun.spawn(["skopeo", ...args], {
+        stdout: "pipe",
+        stderr: "pipe",
       });
+
+      // Short timeout for connectivity test
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("timeout")), 10000);
+      });
+
+      const result = await Promise.race([proc.exited, timeoutPromise]);
+
+      // Any successful response means we can connect (even if the image doesn't exist)
+      // 0 = success, non-zero but not a connection error = also ok for connectivity test
+      if (result === 0) {
+        logger.debug("Successfully connected to registry", { registry });
+        return { success: true };
+      }
+
+      const stderr = await new Response(proc.stderr).text();
       
-      // Any response (even 401 Unauthorized) means we can connect
-      if (response.status === 200 || response.status === 401) {
-        logger.debug("Successfully connected to registry", { registry, status: response.status });
+      // These errors mean we connected but image doesn't exist - that's ok for connectivity test
+      if (stderr.includes("manifest unknown") || stderr.includes("not found")) {
         return { success: true };
       }
       
-      logger.warn("Registry returned unexpected status", { registry, status: response.status, statusText: response.statusText });
+      // Connection errors
+      if (stderr.includes("connection refused") || 
+          stderr.includes("no such host") ||
+          stderr.includes("timeout") ||
+          stderr.includes("network unreachable")) {
+        return { 
+          success: false, 
+          error: `Connection error: ${stderr.trim()}` 
+        };
+      }
+
+      logger.warn("Registry returned unexpected error", { registry, error: stderr });
       return { 
         success: false, 
-        error: `Registry returned status ${response.status}: ${response.statusText}` 
+        error: stderr.trim() 
       };
     } catch (error) {
       let errorMessage: string;
       
-      if (error instanceof Error && error.name === "AbortError") {
+      if (error instanceof Error && error.message === "timeout") {
         errorMessage = `Connection timeout after 10s`;
-      } else if (error instanceof TypeError) {
-        errorMessage = `Network error: ${error.message}`;
       } else {
         errorMessage = error instanceof Error ? error.message : String(error);
       }
@@ -313,7 +250,7 @@ export class RegistryClient {
   }
 
   /**
-   * Clone an image from source to target registry
+   * Clone an image from source to target registry using skopeo copy
    */
   async cloneImage(sourceImage: string, targetRegistry: string): Promise<{
     success: boolean;
@@ -354,14 +291,50 @@ export class RegistryClient {
       
       logger.debug("Pre-flight checks passed, proceeding with image clone");
 
-      // 1. Get manifest from source
-      const manifest = await this.getManifest(sourceRef);
-      if (!manifest) {
-        throw new Error("Failed to fetch source manifest");
+      // Use skopeo copy for efficient registry-to-registry transfer
+      const args = ["copy", `docker://${sourceImage}`, `docker://${targetImage}`];
+
+      // Add source credentials
+      const sourceCreds = getCredentialsForRegistry(this.authConfig, sourceRef.registry);
+      if (sourceCreds) {
+        args.push("--src-creds", `${sourceCreds.username}:${sourceCreds.password}`);
       }
 
-      // 2. Push manifest to target
-      await this.pushManifest(targetRef, manifest);
+      // Add destination credentials
+      const targetCreds = getCredentialsForRegistry(this.authConfig, targetRef.registry);
+      if (targetCreds) {
+        args.push("--dest-creds", `${targetCreds.username}:${targetCreds.password}`);
+      }
+
+      // Add insecure flags if needed
+      if (this.insecureRegistries.includes(sourceRef.registry)) {
+        args.push("--src-tls-verify=false");
+      }
+      if (this.insecureRegistries.includes(targetRef.registry)) {
+        args.push("--dest-tls-verify=false");
+      }
+
+      // Add --all flag to copy all architectures in manifest lists
+      args.push("--all");
+
+      logger.debug("Executing skopeo copy", { args: args.join(" ") });
+
+      const proc = Bun.spawn(["skopeo", ...args], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      // Wait for process to complete with timeout
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("timeout")), this.timeout);
+      });
+
+      const result = await Promise.race([proc.exited, timeoutPromise]);
+
+      if (result !== 0) {
+        const stderr = await new Response(proc.stderr).text();
+        throw new Error(`Skopeo copy failed: ${stderr.trim()}`);
+      }
 
       const duration = (Date.now() - startTime) / 1000;
       metrics.observeHistogram(METRICS.IMAGE_CLONE_DURATION, duration, {
@@ -394,133 +367,6 @@ export class RegistryClient {
 
       logger.error("Failed to clone image", error, { sourceImage, targetImage, duration });
       return { success: false, error: errorMessage };
-    }
-  }
-
-  /**
-   * Get manifest from source registry
-   */
-  private async getManifest(imageRef: ImageReference): Promise<string | null> {
-    const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
-    const reference = imageRef.digest || imageRef.tag || "latest";
-    const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
-    logger.debug("Getting manifest from registry", { manifestUrl, registry: imageRef.registry });
-
-    try {
-      let response = await fetch(manifestUrl, {
-        method: "GET",
-        headers: {
-          Accept: [
-            "application/vnd.docker.distribution.manifest.v2+json",
-            "application/vnd.docker.distribution.manifest.list.v2+json",
-            "application/vnd.oci.image.manifest.v1+json",
-            "application/vnd.oci.image.index.v1+json",
-          ].join(", "),
-        },
-        signal: AbortSignal.timeout(this.timeout),
-      });
-
-      // Handle authentication
-      if (response.status === 401) {
-        const wwwAuth = response.headers.get("WWW-Authenticate");
-        if (wwwAuth) {
-          const token = await this.getToken(imageRef, wwwAuth);
-          if (token) {
-            response = await fetch(manifestUrl, {
-              method: "GET",
-              headers: {
-                Accept: [
-                  "application/vnd.docker.distribution.manifest.v2+json",
-                  "application/vnd.docker.distribution.manifest.list.v2+json",
-                  "application/vnd.oci.image.manifest.v1+json",
-                  "application/vnd.oci.image.index.v1+json",
-                ].join(", "),
-                Authorization: `Bearer ${token}`,
-              },
-              signal: AbortSignal.timeout(this.timeout),
-            });
-          }
-        }
-      }
-
-      if (!response.ok) {
-        throw new Error(`Failed to get manifest: ${response.status} ${response.statusText}`);
-      }
-
-      return await response.text();
-    } catch (error) {
-      // Handle timeout errors
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Request to ${imageRef.registry} timed out after ${this.timeout}ms`);
-      }
-      
-      // Handle network errors
-      if (error instanceof TypeError) {
-        throw new Error(`Network error connecting to ${imageRef.registry}: ${error.message}`);
-      }
-      
-      // Re-throw other errors
-      throw error;
-    }
-  }
-
-  /**
-   * Push manifest to target registry
-   */
-  private async pushManifest(imageRef: ImageReference, manifest: string): Promise<void> {
-    const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
-    const reference = imageRef.digest || imageRef.tag || "latest";
-    const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
-
-    // Parse manifest to get content type
-    const manifestObj = JSON.parse(manifest);
-    const contentType = manifestObj.mediaType || "application/vnd.docker.distribution.manifest.v2+json";
-
-    try {
-      let response = await fetch(manifestUrl, {
-        method: "PUT",
-        headers: {
-          "Content-Type": contentType,
-        },
-        body: manifest,
-        signal: AbortSignal.timeout(this.timeout),
-      });
-
-      // Handle authentication
-      if (response.status === 401) {
-        const wwwAuth = response.headers.get("WWW-Authenticate");
-        if (wwwAuth) {
-          const token = await this.getToken(imageRef, wwwAuth);
-          if (token) {
-            response = await fetch(manifestUrl, {
-              method: "PUT",
-              headers: {
-                "Content-Type": contentType,
-                Authorization: `Bearer ${token}`,
-              },
-              body: manifest,
-              signal: AbortSignal.timeout(this.timeout),
-            });
-          }
-        }
-      }
-
-      if (!response.ok) {
-        throw new Error(`Failed to push manifest: ${response.status} ${response.statusText}`);
-      }
-    } catch (error) {
-      // Handle timeout errors
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Request to ${imageRef.registry} timed out after ${this.timeout}ms`);
-      }
-      
-      // Handle network errors
-      if (error instanceof TypeError) {
-        throw new Error(`Network error connecting to ${imageRef.registry}: ${error.message}`);
-      }
-      
-      // Re-throw other errors
-      throw error;
     }
   }
 }

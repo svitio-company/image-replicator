@@ -1,9 +1,20 @@
-import { describe, test, expect, mock, beforeEach } from "bun:test";
+import { describe, test, expect, mock, beforeEach, spyOn } from "bun:test";
 import { RegistryClient } from "./registry-client";
 import type { RegistryAuthConfig } from "../types";
 
+// Mock Bun.spawn for all tests
+const mockSpawn = (exitCode: number, stdout = "", stderr = "") => {
+  return {
+    exited: Promise.resolve(exitCode),
+    stdout: new Response(stdout).body,
+    stderr: new Response(stderr).body,
+    kill: mock(() => {}),
+  } as any;
+};
+
 describe("RegistryClient", () => {
   let authConfig: RegistryAuthConfig;
+  let originalSpawn: typeof Bun.spawn;
 
   beforeEach(() => {
     authConfig = {
@@ -17,6 +28,7 @@ describe("RegistryClient", () => {
         password: "defaultpass",
       },
     };
+    originalSpawn = Bun.spawn;
   });
 
   describe("constructor", () => {
@@ -95,137 +107,229 @@ describe("RegistryClient", () => {
   });
 });
 
-describe("RegistryClient - Image Reference Parsing", () => {
+describe("RegistryClient - Skopeo Integration", () => {
   let authConfig: RegistryAuthConfig;
+  let originalSpawn: typeof Bun.spawn;
 
   beforeEach(() => {
     authConfig = {
-      credentials: new Map(),
+      credentials: new Map([
+        ["docker.io", { registry: "docker.io", username: "user", password: "pass" }],
+      ]),
     };
+    originalSpawn = Bun.spawn;
   });
 
   describe("checkImageExists", () => {
-    test("should parse simple image name", async () => {
+    test("should call skopeo inspect for image verification", async () => {
       const client = new RegistryClient(authConfig);
       
-      // Mock fetch to avoid actual network calls
-      global.fetch = mock(() => 
-        Promise.resolve(new Response(null, { status: 404 }))
-      ) as any;
-
-      const result = await client.checkImageExists("nginx");
-      
-      expect(result.image).toBe("nginx");
-      expect(result.registry).toBe("registry-1.docker.io");
-    });
-
-    test("should parse image with tag", async () => {
-      const client = new RegistryClient(authConfig);
-      
-      global.fetch = mock(() => 
-        Promise.resolve(new Response(null, { status: 404 }))
-      ) as any;
-
-      const result = await client.checkImageExists("nginx:1.19");
-      
-      expect(result.image).toBe("nginx:1.19");
-      expect(result.registry).toBe("registry-1.docker.io");
-    });
-
-    test("should parse GCR image", async () => {
-      const client = new RegistryClient(authConfig);
-      
-      global.fetch = mock(() => 
-        Promise.resolve(new Response(null, { status: 404 }))
-      ) as any;
-
-      const result = await client.checkImageExists("gcr.io/project/image:tag");
-      
-      expect(result.image).toBe("gcr.io/project/image:tag");
-      expect(result.registry).toBe("gcr.io");
-    });
-
-    test("should parse image with digest", async () => {
-      const client = new RegistryClient(authConfig);
-      
-      global.fetch = mock(() => 
-        Promise.resolve(new Response(null, { status: 404 }))
-      ) as any;
-
-      const result = await client.checkImageExists("nginx@sha256:abc123");
-      
-      expect(result.image).toBe("nginx@sha256:abc123");
-      expect(result.registry).toBe("registry-1.docker.io");
-    });
-  });
-
-  describe("checkImageExists with target registry", () => {
-    test("should check target registry when configured", async () => {
-      const client = new RegistryClient(authConfig, "myregistry.io");
-      
-      global.fetch = mock(() => 
-        Promise.resolve(new Response(null, { status: 404 }))
-      ) as any;
-
-      const result = await client.checkImageExists("nginx:latest");
-      
-      // Should check in target registry, not source
-      expect(result.registry).toBe("myregistry.io");
-    });
-
-    test("should handle digest-based images in target registry", async () => {
-      const client = new RegistryClient(authConfig, "myregistry.io");
-      
-      global.fetch = mock(() => 
-        Promise.resolve(new Response(null, { status: 404 }))
-      ) as any;
-
-      const result = await client.checkImageExists("nginx@sha256:abc123def456");
-      
-      expect(result.registry).toBe("myregistry.io");
-    });
-  });
-
-  describe("error handling", () => {
-    test("should handle network errors gracefully", async () => {
-      const client = new RegistryClient(authConfig);
-      
-      global.fetch = mock(() => 
-        Promise.reject(new TypeError("Network error"))
-      ) as any;
-
-      const result = await client.checkImageExists("nginx:latest");
-      
-      expect(result.exists).toBe(false);
-      expect(result.error).toContain("Network error");
-    });
-
-    test("should handle timeout errors", async () => {
-      const client = new RegistryClient(authConfig, undefined, 100);
-      
-      global.fetch = mock(() => {
-        const error = new Error("Timeout");
-        error.name = "AbortError";
-        return Promise.reject(error);
+      Bun.spawn = mock((args: any) => {
+        expect(args[0]).toBe("skopeo");
+        expect(args[1]).toBe("inspect");
+        return mockSpawn(0, JSON.stringify({ Name: "nginx" }));
       }) as any;
 
       const result = await client.checkImageExists("nginx:latest");
       
-      expect(result.exists).toBe(false);
-      expect(result.error).toContain("timed out");
+      expect(result.exists).toBe(true);
+      expect(result.registry).toBe("registry-1.docker.io");
+      
+      Bun.spawn = originalSpawn;
     });
 
-    test("should handle non-200/404 status codes", async () => {
+    test("should handle image not found (404)", async () => {
       const client = new RegistryClient(authConfig);
       
-      global.fetch = mock(() => 
-        Promise.resolve(new Response(null, { status: 500, statusText: "Internal Server Error" }))
-      ) as any;
+      Bun.spawn = mock(() => {
+        return mockSpawn(1, "", "manifest unknown: manifest not found");
+      }) as any;
 
-      const result = await client.checkImageExists("nginx:latest");
+      const result = await client.checkImageExists("nonexistent:latest");
       
       expect(result.exists).toBe(false);
-      expect(result.error).toContain("500");
+      
+      Bun.spawn = originalSpawn;
+    });
+
+    test("should pass credentials to skopeo", async () => {
+      const client = new RegistryClient(authConfig);
+      
+      Bun.spawn = mock((args: any) => {
+        const argsArray = Array.isArray(args) ? args : [args];
+        expect(argsArray).toContain("--creds");
+        expect(argsArray).toContain("user:pass");
+        return mockSpawn(0, JSON.stringify({ Name: "nginx" }));
+      }) as any;
+
+      await client.checkImageExists("nginx:latest");
+      
+      Bun.spawn = originalSpawn;
+    });
+
+    test("should handle target registry when configured", async () => {
+      const client = new RegistryClient(authConfig, "myregistry.io");
+      
+      Bun.spawn = mock((args: any) => {
+        const argsArray = Array.isArray(args) ? args : [args];
+        const dockerArg = argsArray.find((arg: string) => arg?.startsWith?.("docker://"));
+        expect(dockerArg).toContain("myregistry.io");
+        return mockSpawn(0, JSON.stringify({ Name: "nginx" }));
+      }) as any;
+
+      const result = await client.checkImageExists("nginx:latest");
+      expect(result.registry).toBe("myregistry.io");
+      
+      Bun.spawn = originalSpawn;
+    });
+
+    test("should handle digest-based images", async () => {
+      const client = new RegistryClient(authConfig);
+      
+      Bun.spawn = mock((args: any) => {
+        const argsArray = Array.isArray(args) ? args : [args];
+        const dockerArg = argsArray.find((arg: string) => arg?.includes?.("@sha256:"));
+        expect(dockerArg).toBeDefined();
+        return mockSpawn(0, JSON.stringify({ Name: "nginx" }));
+      }) as any;
+
+      await client.checkImageExists("nginx@sha256:abc123");
+      
+      Bun.spawn = originalSpawn;
+    });
+  });
+
+  describe("cloneImage", () => {
+    test("should call skopeo copy with correct arguments", async () => {
+      const client = new RegistryClient(authConfig);
+      
+      let inspectCalls = 0;
+      let copyCalled = false;
+      
+      Bun.spawn = mock((args: any) => {
+        const argsArray = Array.isArray(args) ? args : [args];
+        
+        if (argsArray.includes("inspect")) {
+          inspectCalls++;
+          return mockSpawn(0, JSON.stringify({ Name: "test" }));
+        }
+        
+        if (argsArray.includes("copy")) {
+          copyCalled = true;
+          expect(argsArray).toContain("docker://nginx:latest");
+          expect(argsArray).toContain("docker://myregistry.io/library/nginx:latest");
+          expect(argsArray).toContain("--all");
+          return mockSpawn(0);
+        }
+        
+        return mockSpawn(0);
+      }) as any;
+
+      const result = await client.cloneImage("nginx:latest", "myregistry.io");
+      
+      expect(result.success).toBe(true);
+      expect(copyCalled).toBe(true);
+      
+      Bun.spawn = originalSpawn;
+    });
+
+    test("should pass source and destination credentials", async () => {
+      const authConfigWithTarget = {
+        credentials: new Map([
+          ["docker.io", { registry: "docker.io", username: "sourceuser", password: "sourcepass" }],
+          ["myregistry.io", { registry: "myregistry.io", username: "targetuser", password: "targetpass" }],
+        ]),
+      };
+      
+      const client = new RegistryClient(authConfigWithTarget);
+      
+      let copyArgs: string[] = [];
+      
+      Bun.spawn = mock((args: any) => {
+        const argsArray = Array.isArray(args) ? args : [args];
+        
+        if (argsArray.includes("copy")) {
+          copyArgs = argsArray;
+          return mockSpawn(0);
+        }
+        
+        return mockSpawn(0, JSON.stringify({ Name: "test" }));
+      }) as any;
+
+      await client.cloneImage("nginx:latest", "myregistry.io");
+      
+      expect(copyArgs).toContain("--src-creds");
+      expect(copyArgs).toContain("sourceuser:sourcepass");
+      expect(copyArgs).toContain("--dest-creds");
+      expect(copyArgs).toContain("targetuser:targetpass");
+      
+      Bun.spawn = originalSpawn;
+    });
+
+    test("should handle clone errors", async () => {
+      const client = new RegistryClient(authConfig);
+      
+      Bun.spawn = mock((args: any) => {
+        const argsArray = Array.isArray(args) ? args : [args];
+        
+        if (argsArray.includes("copy")) {
+          return mockSpawn(1, "", "Error copying image: authentication failed");
+        }
+        
+        return mockSpawn(0, JSON.stringify({ Name: "test" }));
+      }) as any;
+
+      const result = await client.cloneImage("nginx:latest", "myregistry.io");
+      
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("authentication failed");
+      
+      Bun.spawn = originalSpawn;
+    });
+  });
+
+  describe("testRegistryConnectivity", () => {
+    test("should test connectivity with skopeo", async () => {
+      const client = new RegistryClient(authConfig);
+      
+      Bun.spawn = mock(() => {
+        return mockSpawn(0, JSON.stringify({ Name: "test" }));
+      }) as any;
+
+      const result = await client.testRegistryConnectivity("docker.io");
+      
+      expect(result.success).toBe(true);
+      
+      Bun.spawn = originalSpawn;
+    });
+
+    test("should handle connectivity errors", async () => {
+      const client = new RegistryClient(authConfig);
+      
+      Bun.spawn = mock(() => {
+        return mockSpawn(1, "", "connection refused");
+      }) as any;
+
+      const result = await client.testRegistryConnectivity("unreachable.io");
+      
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("connection");
+      
+      Bun.spawn = originalSpawn;
+    });
+
+    test("should treat image not found as successful connectivity", async () => {
+      const client = new RegistryClient(authConfig);
+      
+      Bun.spawn = mock(() => {
+        return mockSpawn(1, "", "manifest unknown: not found");
+      }) as any;
+
+      const result = await client.testRegistryConnectivity("docker.io");
+      
+      expect(result.success).toBe(true);
+      
+      Bun.spawn = originalSpawn;
     });
   });
 });

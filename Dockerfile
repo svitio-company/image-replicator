@@ -1,4 +1,4 @@
-# Use Bun as base image
+# Use Bun as base image for building
 FROM oven/bun:1.3-alpine AS builder
 
 WORKDIR /app
@@ -16,17 +16,29 @@ COPY tsconfig.json ./
 # Build the application
 RUN bun build src/index.ts --outdir dist --target bun
 
-# Production image - distroless (minimal, no shell, non-root by default)
-FROM oven/bun:1.3-distroless
+# Production image - Alpine with Bun and Skopeo
+FROM oven/bun:1.3-alpine
 
 WORKDIR /app
 
+# Install skopeo from Alpine repositories
+RUN apk add --no-cache skopeo
+
 # Copy only the built application (single file bundle)
 COPY --from=builder /app/dist/index.js .
+
+# Create non-root user
+RUN addgroup -g 1001 -S appuser && \
+    adduser -u 1001 -S appuser -G appuser
+
+# Change ownership of the app directory
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Expose ports
 EXPOSE 8443 8080
 
 # Run the application
-# Distroless runs as non-root user (bun) by default
 ENTRYPOINT [ "bun", "run", "index.js" ]
