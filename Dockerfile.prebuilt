@@ -11,4 +11,4 @@ COPY dist/index.js .
 EXPOSE 8443 8080
 
 # Run as non-root (distroless default)
-CMD ["bun", "index.js"]
+ENTRYPOINT [ "bun", "run", "index.js" ]
