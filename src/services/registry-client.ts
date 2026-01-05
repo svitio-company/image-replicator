@@ -9,6 +9,29 @@ import { metrics, METRICS } from "./metrics";
 import { logger } from "../utils/logger";
 
 /**
+ * Sanitize command arguments for logging by masking credentials
+ */
+function sanitizeArgs(args: string[]): string {
+  const sanitized = [...args];
+  const credsFlags = ["--creds", "--src-creds", "--dest-creds"];
+  
+  for (let i = 0; i < sanitized.length; i++) {
+    if (credsFlags.includes(sanitized[i]) && i + 1 < sanitized.length) {
+      // Mask the password part, keep username for debugging
+      const creds = sanitized[i + 1];
+      const colonIndex = creds.indexOf(":");
+      if (colonIndex > 0) {
+        sanitized[i + 1] = creds.substring(0, colonIndex + 1) + "***";
+      } else {
+        sanitized[i + 1] = "***";
+      }
+    }
+  }
+  
+  return sanitized.join(" ");
+}
+
+/**
  * Registry client using Skopeo for container image operations
  * Skopeo provides battle-tested, production-ready image manipulation
  * Supports Docker Hub, GCR, GHCR, ACR, ECR, and generic registries
@@ -317,7 +340,7 @@ export class RegistryClient {
       // Add --all flag to copy all architectures in manifest lists
       args.push("--all");
 
-      logger.debug("Executing skopeo copy", { args: args.join(" ") });
+      logger.debug("Executing skopeo copy", { args: sanitizeArgs(args) });
 
       const proc = Bun.spawn(["skopeo", ...args], {
         stdout: "pipe",
