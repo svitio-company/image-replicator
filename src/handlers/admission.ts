@@ -14,6 +14,7 @@ import type {
 } from "../types";
 import { RegistryClient } from "../services/registry-client";
 import { metrics, METRICS } from "../services/metrics";
+import { logger } from "../utils/logger";
 
 /**
  * Extract all container images from a Kubernetes object
@@ -161,13 +162,14 @@ export async function handleAdmissionReview(
   metrics.incrementGauge(METRICS.REQUESTS_IN_FLIGHT);
 
   try {
-    console.log(
-      `[${uid}] Processing ${operation} request for ${kind.kind}/${object?.metadata?.name || "unknown"} in namespace ${namespace || "default"}${subResource ? ` (subResource: ${subResource})` : ""}`
+    logger.info(
+      `Processing ${operation} request for ${kind.kind}/${object?.metadata?.name || "unknown"} in namespace ${namespace || "default"}${subResource ? ` (subResource: ${subResource})` : ""}`,
+      { uid, operation, kind: kind.kind, namespace: namespace || "default" }
     );
 
     // Skip validation for subresources (scale, status, etc.) - they don't change images
     if (subResource) {
-      console.log(`[${uid}] Skipping validation for subresource: ${subResource}`);
+      logger.info(`Skipping validation for subresource: ${subResource}`, { uid });
       metrics.incrementCounter(METRICS.ADMISSION_REQUESTS_TOTAL, {
         operation,
         kind: kind.kind,
@@ -179,7 +181,7 @@ export async function handleAdmissionReview(
 
     // Only validate CREATE and UPDATE operations
     if (operation !== "CREATE" && operation !== "UPDATE") {
-      console.log(`[${uid}] Skipping validation for ${operation} operation`);
+      logger.info(`Skipping validation for ${operation} operation`, { uid, operation });
       metrics.incrementCounter(METRICS.ADMISSION_REQUESTS_TOTAL, {
         operation,
         kind: kind.kind,
@@ -193,7 +195,7 @@ export async function handleAdmissionReview(
     const images = extractImagesFromObject(kind.kind, object?.spec);
 
     if (images.length === 0) {
-      console.log(`[${uid}] No images found in object, allowing`);
+      logger.info("No images found in object, allowing", { uid });
       metrics.incrementCounter(METRICS.ADMISSION_REQUESTS_TOTAL, {
         operation,
         kind: kind.kind,
@@ -203,7 +205,7 @@ export async function handleAdmissionReview(
       return createAllowedResponse(uid);
     }
 
-    console.log(`[${uid}] Found ${images.length} images to validate:`, images);
+    logger.info(`Found ${images.length} images to validate`, { uid, imageCount: images.length, images: images.join(", ") });
 
     // Check all images
     const results = await registryClient.checkImages(images);
@@ -222,7 +224,7 @@ export async function handleAdmissionReview(
     const targetRegistry = registryClient.getTargetRegistry();
 
     if (missingImages.length > 0 && targetRegistry) {
-      console.log(`[${uid}] Found ${missingImages.length} images missing from target registry, attempting to clone...`);
+      logger.info(`Found ${missingImages.length} images missing from target registry, attempting to clone`, { uid, missingCount: missingImages.length });
       
       // Clone missing images
       const cloneResults = await Promise.all(
@@ -238,7 +240,7 @@ export async function handleAdmissionReview(
       if (failedClones.length > 0) {
         const errorMessage = `Failed to clone ${failedClones.length} image(s):\n` +
           failedClones.map((r) => `  - ${r.image}: ${r.error}`).join("\n");
-        console.error(`[${uid}] Clone failed:`, errorMessage);
+        logger.error("Clone failed", errorMessage, { uid, failedCount: failedClones.length });
         metrics.incrementCounter(METRICS.ADMISSION_REQUESTS_TOTAL, {
           operation,
           kind: kind.kind,
@@ -248,11 +250,11 @@ export async function handleAdmissionReview(
         return createDeniedResponse(uid, errorMessage);
       }
 
-      console.log(`[${uid}] Successfully cloned all ${cloneResults.length} images`);
+      logger.info("Successfully cloned all images", { uid, clonedCount: cloneResults.length });
     } else if (missingImages.length > 0) {
       // No target registry configured - deny
       const errorMessage = formatValidationError(missingImages);
-      console.error(`[${uid}] Validation failed:`, errorMessage);
+      logger.error("Validation failed", errorMessage, { uid, missingCount: missingImages.length });
       metrics.incrementCounter(METRICS.ADMISSION_REQUESTS_TOTAL, {
         operation,
         kind: kind.kind,
@@ -263,7 +265,7 @@ export async function handleAdmissionReview(
     }
 
     // All images exist
-    console.log(`[${uid}] All images validated successfully`);
+    logger.info("All images validated successfully", { uid });
     metrics.incrementCounter(METRICS.ADMISSION_REQUESTS_TOTAL, {
       operation,
       kind: kind.kind,

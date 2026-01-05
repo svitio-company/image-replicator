@@ -1,4 +1,5 @@
 import type { ImageReference } from "../types";
+import { logger } from "./logger";
 
 // Default registries mapping
 const DEFAULT_REGISTRIES: Record<string, string> = {
@@ -17,7 +18,7 @@ const DEFAULT_REGISTRIES: Record<string, string> = {
  * - image@sha256:abc123...
  */
 export function parseImageReference(image: string): ImageReference {
-  console.debug(`parseImageReference input: ${image}`);
+  logger.debug("Parsing image reference", { image });
   
   let registry = "docker.io";
   let repository = image;
@@ -76,7 +77,7 @@ export function parseImageReference(image: string): ImageReference {
     fullImage: image,
   };
   
-  console.debug(`parseImageReference output:`, JSON.stringify(result, null, 2));
+  logger.debug("Parsed image reference", { registry: result.registry, repository: result.repository, tag: result.tag, digest: result.digest });
   
   return result;
 }

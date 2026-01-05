@@ -3,6 +3,7 @@ import { RegistryClient } from "./services/registry-client";
 import { handleAdmissionReview } from "./handlers/admission";
 import { loadCredentials } from "./utils/credentials";
 import { metrics } from "./services/metrics";
+import { logger, initLogger } from "./utils/logger";
 
 // Configuration from environment
 const PORT = parseInt(Bun.env.PORT || "8443", 10);
@@ -15,14 +16,11 @@ const REGISTRY_TIMEOUT = parseInt(Bun.env.REGISTRY_TIMEOUT || "240000", 10); // 
 const INSECURE_REGISTRIES = Bun.env.INSECURE_REGISTRIES?.split(",").map(r => r.trim()).filter(Boolean) || [];
 const DEBUG = Bun.env.DEBUG === "true";
 
-// Set global DEBUG flag for console.debug filtering
-if (!DEBUG) {
-  // Disable console.debug when DEBUG is false
-  console.debug = () => {};
-}
+// Initialize logger with DEBUG flag
+initLogger(DEBUG);
 
-console.log("Starting Image Validator Webhook...");
-console.log(`Configuration:
+logger.info("Starting Image Validator Webhook...");
+logger.info(`Configuration:
   - Webhook Port: ${PORT}
   - Health Port: ${HEALTH_PORT}
   - TLS Enabled: ${!SKIP_TLS}
@@ -36,28 +34,24 @@ console.log(`Configuration:
 
 // Load registry credentials
 const authConfig = await loadCredentials();
-console.log(
-  `Loaded credentials for ${authConfig.credentials.size} registries`
-);
+logger.info("Loaded credentials", { registryCount: authConfig.credentials.size });
 if (authConfig.defaultCredentials) {
-  console.log(
-    `Default credentials configured for: ${authConfig.defaultCredentials.registry}`
-  );
+  logger.info("Default credentials configured", { registry: authConfig.defaultCredentials.registry });
 }
 
 // Validate credentials configuration
 if (authConfig.credentials.size > 0 || authConfig.defaultCredentials) {
-  console.log(`✓ Registry credentials configured:`);
+  logger.info("Registry credentials configured");
   for (const [registry] of authConfig.credentials) {
-    console.log(`  - ${registry}`);
+    logger.info(`  - ${registry}`);
   }
   if (authConfig.defaultCredentials) {
-    console.log(`  - Default: ${authConfig.defaultCredentials.registry}`);
+    logger.info(`  - Default: ${authConfig.defaultCredentials.registry}`);
   }
 } else {
-  console.warn(`⚠️  No registry credentials configured`);
-  console.warn(`⚠️  - Private source registries (Docker Hub, GHCR, etc.) will fail`);
-  console.warn(`⚠️  - Only public registries will be accessible`);
+  logger.warn("No registry credentials configured");
+  logger.warn("  - Private source registries (Docker Hub, GHCR, etc.) will fail");
+  logger.warn("  - Only public registries will be accessible");
 }
 
 // Validate TARGET_REGISTRY credentials if replication is enabled
@@ -67,18 +61,18 @@ if (TARGET_REGISTRY) {
                          authConfig.defaultCredentials?.registry === normalizedTarget;
   
   if (!hasTargetCreds) {
-    console.warn(`⚠️  WARNING: Image replication enabled but no credentials for target registry!`);
-    console.warn(`⚠️  - Target registry: ${TARGET_REGISTRY}`);
-    console.warn(`⚠️  - Replication will fail without authentication`);
-    console.warn(`⚠️  - Add credentials for "${normalizedTarget}" to registry-credentials secret`);
+    logger.warn("WARNING: Image replication enabled but no credentials for target registry!");
+    logger.warn(`  - Target registry: ${TARGET_REGISTRY}`);
+    logger.warn("  - Replication will fail without authentication");
+    logger.warn(`  - Add credentials for "${normalizedTarget}" to registry-credentials secret`);
     
     // Optionally make it fatal
     if (Bun.env.REQUIRE_CREDENTIALS === "true") {
-      console.error(`❌ REQUIRE_CREDENTIALS=true: Exiting due to missing target registry credentials`);
+      logger.error("REQUIRE_CREDENTIALS=true: Exiting due to missing target registry credentials");
       process.exit(1);
     }
   } else {
-    console.log(`✓ Target registry credentials verified: ${TARGET_REGISTRY}`);
+    logger.info("Target registry credentials verified", { targetRegistry: TARGET_REGISTRY });
   }
 }
 
@@ -113,7 +107,7 @@ const healthServer = Bun.serve({
   },
 });
 
-console.log(`Health server listening on port ${HEALTH_PORT}`);
+logger.info("Health server listening", { port: HEALTH_PORT });
 
 // TLS configuration
 let tlsConfig: { cert: string; key: string } | undefined;
@@ -124,10 +118,8 @@ if (!SKIP_TLS) {
     const keyFile = Bun.file(TLS_KEY_PATH);
 
     if (!(await certFile.exists()) || !(await keyFile.exists())) {
-      console.error(
-        `TLS certificate or key not found at ${TLS_CERT_PATH} and ${TLS_KEY_PATH}`
-      );
-      console.error("Set SKIP_TLS=true for development or provide valid certificates");
+      logger.error("TLS certificate or key not found", undefined, { certPath: TLS_CERT_PATH, keyPath: TLS_KEY_PATH });
+      logger.error("Set SKIP_TLS=true for development or provide valid certificates");
       process.exit(1);
     }
 
@@ -135,9 +127,9 @@ if (!SKIP_TLS) {
       cert: await certFile.text(),
       key: await keyFile.text(),
     };
-    console.log("TLS certificates loaded successfully");
+    logger.info("TLS certificates loaded successfully");
   } catch (error) {
-    console.error("Failed to load TLS certificates:", error);
+    logger.error("Failed to load TLS certificates", error);
     process.exit(1);
   }
 }
@@ -177,7 +169,7 @@ const webhookServer = Bun.serve({
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {
-        console.error("Error processing admission review:", error);
+        logger.error("Error processing admission review", error);
         return new Response(
           JSON.stringify({
             apiVersion: "admission.k8s.io/v1",
@@ -215,20 +207,18 @@ const webhookServer = Bun.serve({
   },
 });
 
-console.log(
-  `Webhook server listening on port ${PORT} (TLS: ${!SKIP_TLS})`
-);
+logger.info("Webhook server listening", { port: PORT, tls: !SKIP_TLS });
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
-  console.log("Received SIGTERM, shutting down gracefully...");
+  logger.info("Received SIGTERM, shutting down gracefully...");
   healthServer.stop();
   webhookServer.stop();
   process.exit(0);
 });
 
 process.on("SIGINT", () => {
-  console.log("Received SIGINT, shutting down gracefully...");
+  logger.info("Received SIGINT, shutting down gracefully...");
   healthServer.stop();
   webhookServer.stop();
   process.exit(0);

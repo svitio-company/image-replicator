@@ -1,4 +1,5 @@
 import type { RegistryCredentials, DockerConfigJson, RegistryAuthConfig } from "../types";
+import { logger } from "./logger";
 
 const CREDENTIALS_PATH = "/credentials/config.json";
 
@@ -12,13 +13,8 @@ export async function loadCredentials(): Promise<RegistryAuthConfig> {
   const credFile = Bun.file(CREDENTIALS_PATH);
   const fileExists = await credFile.exists();
 
-  if (!fileExists && !Bun.env.DOCKER_CONFIG_JSON) {
-    console.warn(`⚠️  Credentials file not found at ${CREDENTIALS_PATH}`);
-    console.warn(`⚠️  DOCKER_CONFIG_JSON environment variable also not set`);
-    console.warn(`⚠️  Only public registries will work without authentication`);
-    console.warn(`⚠️  Mount registry-credentials secret to enable private registry access`);
-  } else if (fileExists) {
-    console.log(`✓ Credentials file found at ${CREDENTIALS_PATH}`);
+  if (fileExists) {
+    logger.info("Credentials file found", { path: CREDENTIALS_PATH });
   }
 
   // Load from environment variable (DOCKER_CONFIG_JSON)
@@ -33,7 +29,7 @@ export async function loadCredentials(): Promise<RegistryAuthConfig> {
         }
       }
     } catch (error) {
-      console.error("Failed to parse DOCKER_CONFIG_JSON:", error);
+      logger.error("Failed to parse DOCKER_CONFIG_JSON", error);
     }
   }
 
@@ -74,6 +70,14 @@ export async function loadCredentials(): Promise<RegistryAuthConfig> {
       username: defaultUsername,
       password: defaultToken || defaultPassword || "",
     };
+  }
+
+  // Show warning only if no credentials were loaded at all
+  if (credentials.size === 0 && !defaultCredentials && !fileExists && !dockerConfigJson) {
+    logger.warn("No credentials found from any source");
+    logger.warn("Checked: credentials file, DOCKER_CONFIG_JSON, REGISTRY_* env vars, DEFAULT_REGISTRY_* env vars");
+    logger.warn("Only public registries will work without authentication");
+    logger.warn("Mount registry-credentials secret or set environment variables to enable private registry access");
   }
 
   return { credentials, defaultCredentials };

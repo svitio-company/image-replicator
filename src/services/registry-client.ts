@@ -11,6 +11,7 @@ import {
 } from "../utils/image-parser";
 import { getCredentialsForRegistry } from "../utils/credentials";
 import { metrics, METRICS } from "./metrics";
+import { logger } from "../utils/logger";
 
 /**
  * Registry client for checking image existence
@@ -40,8 +41,7 @@ export class RegistryClient {
    */
   async checkImageExists(image: string): Promise<ImageValidationResult> {
     const imageRef = parseImageReference(image);
-    console.debug(`checkImageExists for image: ${image}`);
-    console.debug(`Parsed imageRef:`, JSON.stringify(imageRef, null, 2));
+    logger.debug("Checking image existence", { image, registry: imageRef.registry, repository: imageRef.repository });
 
     // If target registry is set, check if image exists there (cloned version)
     if (this.targetRegistry) {
@@ -96,7 +96,7 @@ export class RegistryClient {
 
     // Build the manifest URL
     const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
-    console.debug(`verifyManifest URL: ${manifestUrl}`);
+    logger.debug("Verifying manifest", { manifestUrl, registry: imageRef.registry });
 
     try {
       // First, try without auth to see if we need authentication
@@ -184,7 +184,7 @@ export class RegistryClient {
   ): Promise<string | null> {
     const authParams = parseWwwAuthenticate(wwwAuthHeader);
     if (!authParams) {
-      console.warn("Could not parse WWW-Authenticate header:", wwwAuthHeader);
+      logger.warn("Could not parse WWW-Authenticate header", { wwwAuthHeader });
       return null;
     }
 
@@ -229,9 +229,7 @@ export class RegistryClient {
       });
 
       if (!response.ok) {
-        console.error(
-          `Token request failed: ${response.status} ${response.statusText}`
-        );
+        logger.error("Token request failed", undefined, { status: response.status, statusText: response.statusText, registry: imageRef.registry });
         return null;
       }
 
@@ -249,7 +247,7 @@ export class RegistryClient {
 
       return token || null;
     } catch (error) {
-      console.error("Failed to get token:", error);
+      logger.error("Failed to get token", error, { registry: imageRef.registry });
       return null;
     }
   }
@@ -279,7 +277,7 @@ export class RegistryClient {
     const registryUrl = getRegistryApiUrl(registry, this.insecureRegistries);
     const testUrl = `${registryUrl}/v2/`;
     
-    console.debug(`Testing connectivity to ${registry} at ${testUrl}`);
+    logger.debug("Testing connectivity to registry", { registry, testUrl });
     
     try {
       const response = await fetch(testUrl, {
@@ -289,11 +287,11 @@ export class RegistryClient {
       
       // Any response (even 401 Unauthorized) means we can connect
       if (response.status === 200 || response.status === 401) {
-        console.debug(`✓ Successfully connected to ${registry} (status: ${response.status})`);
+        logger.debug("Successfully connected to registry", { registry, status: response.status });
         return { success: true };
       }
       
-      console.warn(`Registry ${registry} returned unexpected status: ${response.status}`);
+      logger.warn("Registry returned unexpected status", { registry, status: response.status, statusText: response.statusText });
       return { 
         success: false, 
         error: `Registry returned status ${response.status}: ${response.statusText}` 
@@ -309,7 +307,7 @@ export class RegistryClient {
         errorMessage = error instanceof Error ? error.message : String(error);
       }
       
-      console.error(`✗ Failed to connect to ${registry}: ${errorMessage}`);
+      logger.error("Failed to connect to registry", undefined, { registry, error: errorMessage });
       return { success: false, error: errorMessage };
     }
   }
@@ -323,23 +321,20 @@ export class RegistryClient {
   }> {
     const startTime = Date.now();
     const sourceRef = parseImageReference(sourceImage);
-    console.debug(`cloneImage sourceImage: ${sourceImage}`);
-    console.debug(`cloneImage sourceRef:`, JSON.stringify(sourceRef, null, 2));
-    console.debug(`cloneImage targetRegistry: ${targetRegistry}`);
+    logger.debug("Starting image clone", { sourceImage, targetRegistry, sourceRegistry: sourceRef.registry, sourceRepository: sourceRef.repository });
     
     // Build target image reference
     const targetImage = sourceRef.digest
       ? `${targetRegistry}/${sourceRef.repository}@${sourceRef.digest}`
       : `${targetRegistry}/${sourceRef.repository}:${sourceRef.tag || "latest"}`;
     const targetRef = parseImageReference(targetImage);
-    console.debug(`cloneImage targetImage: ${targetImage}`);
-    console.debug(`cloneImage targetRef:`, JSON.stringify(targetRef, null, 2));
+    logger.debug("Target image prepared", { targetImage, targetRegistry: targetRef.registry, targetRepository: targetRef.repository });
 
-    console.log(`Cloning ${sourceImage} -> ${targetImage}`);
+    logger.info(`Cloning image from source to target`, { sourceImage, targetImage });
 
     try {
       // Pre-flight connectivity checks
-      console.debug(`Pre-flight: Testing connectivity to source registry ${sourceRef.registry}`);
+      logger.debug("Pre-flight: Testing connectivity to source registry", { registry: sourceRef.registry });
       const sourceConnectivity = await this.testRegistryConnectivity(sourceRef.registry);
       if (!sourceConnectivity.success) {
         throw new Error(
@@ -348,7 +343,7 @@ export class RegistryClient {
         );
       }
       
-      console.debug(`Pre-flight: Testing connectivity to target registry ${targetRef.registry}`);
+      logger.debug("Pre-flight: Testing connectivity to target registry", { registry: targetRef.registry });
       const targetConnectivity = await this.testRegistryConnectivity(targetRef.registry);
       if (!targetConnectivity.success) {
         throw new Error(
@@ -357,7 +352,7 @@ export class RegistryClient {
         );
       }
       
-      console.debug(`Pre-flight checks passed, proceeding with image clone`);
+      logger.debug("Pre-flight checks passed, proceeding with image clone");
 
       // 1. Get manifest from source
       const manifest = await this.getManifest(sourceRef);
@@ -380,7 +375,7 @@ export class RegistryClient {
         status: "success",
       });
 
-      console.log(`Successfully cloned ${sourceImage} to ${targetImage}`);
+      logger.info("Successfully cloned image", { sourceImage, targetImage, duration });
       return { success: true };
     } catch (error) {
       const duration = (Date.now() - startTime) / 1000;
@@ -397,7 +392,7 @@ export class RegistryClient {
         status: "error",
       });
 
-      console.error(`Failed to clone ${sourceImage}: ${errorMessage}`);
+      logger.error("Failed to clone image", error, { sourceImage, targetImage, duration });
       return { success: false, error: errorMessage };
     }
   }
@@ -409,7 +404,7 @@ export class RegistryClient {
     const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
     const reference = imageRef.digest || imageRef.tag || "latest";
     const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
-    console.debug(`getManifest URL: ${manifestUrl}`);
+    logger.debug("Getting manifest from registry", { manifestUrl, registry: imageRef.registry });
 
     try {
       let response = await fetch(manifestUrl, {
