@@ -97,28 +97,29 @@ jobs:
           echo "Testing from pod: $POD_NAME"
           
           echo ""
-          echo "=== Testing DNS resolution ==="
-          kubectl exec -n default $POD_NAME -- nslookup registry-1.docker.io || echo "DNS resolution failed"
+          echo "=== Note: Using debug container (distroless doesn't have shell/tools) ==="
           
           echo ""
-          echo "=== Testing connectivity to Docker Hub ==="
-          kubectl exec -n default $POD_NAME -- wget --timeout=10 --tries=1 -O- https://registry-1.docker.io/v2/ 2>&1 || echo "Docker Hub connection failed"
+          echo "=== Testing DNS resolution for Docker Hub ==="
+          kubectl debug -n default $POD_NAME -it --image=busybox:latest --target=image-replicator -- nslookup registry-1.docker.io || echo "DNS resolution failed"
+          
+          echo ""
+          echo "=== Testing connectivity to Docker Hub registry API ==="
+          kubectl debug -n default $POD_NAME -it --image=busybox:latest --target=image-replicator -- wget --timeout=10 --tries=1 -O- https://registry-1.docker.io/v2/ || echo "Docker Hub connection failed"
           
           echo ""
           echo "=== Testing connectivity to local registry ==="
-          kubectl exec -n default $POD_NAME -- wget --timeout=10 --tries=1 -O- http://my-registry:5001/v2/ 2>&1 || echo "Local registry connection failed"
+          kubectl debug -n default $POD_NAME -it --image=busybox:latest --target=image-replicator -- wget --timeout=10 --tries=1 -O- http://my-registry:5001/v2/ || echo "Local registry connection failed"
           
           echo ""
-          echo "=== Testing Docker Hub API with curl ==="
-          kubectl exec -n default $POD_NAME -- curl -v --max-time 10 https://registry-1.docker.io/v2/ 2>&1 || echo "curl to Docker Hub failed"
+          echo "=== Testing connectivity from node network namespace ==="
+          NODE_NAME=$(kubectl get pod -n default $POD_NAME -o jsonpath='{.spec.nodeName}')
+          echo "Node: $NODE_NAME"
           
-          echo ""
-          echo "=== Checking /etc/resolv.conf ==="
-          kubectl exec -n default $POD_NAME -- cat /etc/resolv.conf || echo "Could not read resolv.conf"
-          
-          echo ""
-          echo "=== Checking CA certificates ==="
-          kubectl exec -n default $POD_NAME -- ls -la /etc/ssl/certs/ | head -20 || echo "Could not list CA certs"
+          # Test from node directly
+          docker exec kind-control-plane nslookup registry-1.docker.io || echo "Node DNS failed"
+          docker exec kind-control-plane wget --timeout=10 --tries=1 -O- https://registry-1.docker.io/v2/ || echo "Node Docker Hub connection failed"
+          docker exec kind-control-plane wget --timeout=10 --tries=1 -O- http://my-registry:5001/v2/ || echo "Node local registry connection failed"
 
       - name: Test webhook with nginx pod
         run: |
