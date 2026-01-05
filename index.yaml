@@ -2,6 +2,28 @@ apiVersion: v1
 entries:
   image-replicator:
   - apiVersion: v2
+    appVersion: 0.4.0
+    created: "2026-01-05T22:35:25.500251714Z"
+    description: A Kubernetes Validating Webhook to verify and replicate container
+      images to target registries
+    digest: ddd3da553980a613c7a08fc3460dab2bc2273c03e4efd307480164302655c4e8
+    home: https://github.com/yourusername/image-replicator
+    keywords:
+    - kubernetes
+    - webhook
+    - validation
+    - container
+    - registry
+    maintainers:
+    - name: Image Replicator Team
+    name: image-replicator
+    sources:
+    - https://github.com/yourusername/image-replicator
+    type: application
+    urls:
+    - https://github.com/svitio-company/image-replicator/releases/download/image-replicator-0.4.0/image-replicator-0.4.0.tgz
+    version: 0.4.0
+  - apiVersion: v2
     appVersion: 0.3.0
     created: "2026-01-05T21:24:01.249954458Z"
     description: A Kubernetes Validating Webhook to verify and replicate container
@@ -67,4 +89,4 @@ entries:
     urls:
     - https://github.com/svitio-company/image-replicator/releases/download/image-replicator-0.1.0/image-replicator-0.1.0.tgz
     version: 0.1.0
-generated: "2026-01-05T21:24:01.249965659Z"
+generated: "2026-01-05T22:35:25.500266221Z"
