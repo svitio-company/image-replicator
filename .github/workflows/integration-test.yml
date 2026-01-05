@@ -54,7 +54,9 @@ jobs:
             --set certManager.certificate.privateKey.rotationPolicy=Always \
             --set webhook.namespaceSelector.matchExpressions[0].key=kubernetes.io/metadata.name \
             --set webhook.namespaceSelector.matchExpressions[0].operator=NotIn \
-            --set-string 'webhook.namespaceSelector.matchExpressions[0].values={default\,kube-system\,cert-manager}' \
+            --set webhook.namespaceSelector.matchExpressions[0].values[0]=default \
+            --set webhook.namespaceSelector.matchExpressions[0].values[1]=kube-system \
+            --set webhook.namespaceSelector.matchExpressions[0].values[2]=cert-manager \
             --debug
 
       - name: Wait for deployment
