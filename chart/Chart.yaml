@@ -11,7 +11,7 @@ keywords:
   - container
   - registry
 maintainers:
-  - name: Image Replicator Team
-home: https://github.com/yourusername/image-replicator
+  - name: "Svitio s.r.o."
+home: https://github.com/svitio-company/image-replicator
 sources:
-  - https://github.com/yourusername/image-replicator
+  - https://github.com/svitio-company/image-replicator
