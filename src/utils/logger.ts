@@ -15,9 +15,11 @@ interface LogContext {
 
 class Logger {
   private debugEnabled: boolean;
+  private jsonFormat: boolean;
 
-  constructor(debugEnabled = false) {
+  constructor(debugEnabled = false, jsonFormat = false) {
     this.debugEnabled = debugEnabled;
+    this.jsonFormat = jsonFormat;
   }
 
   /**
@@ -25,6 +27,13 @@ class Logger {
    */
   setDebugEnabled(enabled: boolean): void {
     this.debugEnabled = enabled;
+  }
+
+  /**
+   * Enable or disable JSON format
+   */
+  setJsonFormat(enabled: boolean): void {
+    this.jsonFormat = enabled;
   }
 
   /**
@@ -36,6 +45,17 @@ class Logger {
     context?: LogContext
   ): string {
     const timestamp = new Date().toISOString();
+    
+    if (this.jsonFormat) {
+      const logEntry = {
+        timestamp,
+        level,
+        message,
+        ...context,
+      };
+      return JSON.stringify(logEntry);
+    }
+    
     const contextStr = context ? ` ${JSON.stringify(context)}` : "";
     return `[${timestamp}] ${level} ${message}${contextStr}`;
   }
@@ -83,6 +103,7 @@ export const logger = new Logger();
 /**
  * Initialize logger with configuration
  */
-export function initLogger(debugEnabled: boolean): void {
+export function initLogger(debugEnabled: boolean, jsonFormat = false): void {
   logger.setDebugEnabled(debugEnabled);
+  logger.setJsonFormat(jsonFormat);
 }

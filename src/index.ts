@@ -15,9 +15,10 @@ const TARGET_REGISTRY = Bun.env.TARGET_REGISTRY; // e.g., "myregistry.azurecr.io
 const REGISTRY_TIMEOUT = parseInt(Bun.env.REGISTRY_TIMEOUT || "240000", 10); // 4 minutes default
 const INSECURE_REGISTRIES = Bun.env.INSECURE_REGISTRIES?.split(",").map(r => r.trim()).filter(Boolean) || [];
 const DEBUG = Bun.env.DEBUG === "true";
+const LOG_FORMAT = Bun.env.LOG_FORMAT || "text"; // "text" or "json"
 
-// Initialize logger with DEBUG flag
-initLogger(DEBUG);
+// Initialize logger with DEBUG flag and format
+initLogger(DEBUG, LOG_FORMAT === "json");
 
 logger.info("Starting Image Validator Webhook...");
 logger.info(`Configuration:
@@ -30,6 +31,7 @@ logger.info(`Configuration:
   - Registry Timeout: ${REGISTRY_TIMEOUT}ms
   - Insecure Registries: ${INSECURE_REGISTRIES.length > 0 ? INSECURE_REGISTRIES.join(", ") : "(none)"}
   - Debug Logging: ${DEBUG}
+  - Log Format: ${LOG_FORMAT}
 `);
 
 // Load registry credentials
