@@ -50,9 +50,9 @@ jobs:
             --set image.repository=my-registry:5001/image-cloner-operator \
             --set image.tag=test \
             --set extraEnv[0].name=TARGET_REGISTRY \
-            --set extraEnv[0].value=my-registry:5001 \
+            --set extraEnv[0].value=localhost:5001 \
             --set extraEnv[1].name=INSECURE_REGISTRIES \
-            --set extraEnv[1].value=my-registry:5001 \
+            --set extraEnv[1].value=localhost:5001 \
             --set extraEnv[2].name=DEBUG \
             --set-string extraEnv[2].value=true \
             --set certManager.certificate.privateKey.rotationPolicy=Always \
@@ -90,36 +90,64 @@ jobs:
           kubectl get pods -A
           kubectl get all -n default
 
-      - name: Test connectivity from operator pod
+      - name: Test registry connectivity
         run: |
-          echo "=== Testing connectivity from operator pod ==="
+          echo "=== Checking registry container details ==="
+          docker ps | grep registry
+          docker inspect my-registry || docker inspect kind-registry || echo "Registry container not found"
+          
+          echo ""
+          echo "=== Getting registry container IP ==="
+          REGISTRY_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' my-registry 2>/dev/null || docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' kind-registry 2>/dev/null || echo "")
+          echo "Registry IP: $REGISTRY_IP"
+          
+          echo ""
+          echo "=== Checking registry service/endpoint in Kubernetes ==="
+          kubectl get svc -A | grep registry || echo "No registry service found"
+          kubectl get endpoints -A | grep registry || echo "No registry endpoints found"
+          
+          echo ""
+          echo "=== Testing registry from GitHub Actions runner ==="
+          curl -v http://localhost:5001/v2/ || echo "Failed from runner via localhost:5001"
+          curl -v http://my-registry:5001/v2/ || echo "Failed from runner via my-registry:5001"
+          if [ -n "$REGISTRY_IP" ]; then
+            curl -v http://$REGISTRY_IP:5001/v2/ || echo "Failed from runner via IP"
+          fi
+          
+          echo ""
+          echo "=== Testing registry from Kind node ==="
+          docker exec kind-control-plane curl -v http://my-registry:5001/v2/ || echo "Failed from node via my-registry:5001"
+          docker exec kind-control-plane curl -v http://localhost:5001/v2/ || echo "Failed from node via localhost:5001"
+          if [ -n "$REGISTRY_IP" ]; then
+            docker exec kind-control-plane curl -v http://$REGISTRY_IP:5001/v2/ || echo "Failed from node via IP"
+          fi
+          
+          echo ""
+          echo "=== Testing DNS resolution from Kind node ==="
+          docker exec kind-control-plane nslookup my-registry || echo "DNS resolution failed for my-registry"
+          docker exec kind-control-plane getent hosts my-registry || echo "getent failed for my-registry"
+          
+          echo ""
+          echo "=== Checking network connectivity from test pod ==="
+          kubectl run test-curl --image=curlimages/curl:latest --rm -i --restart=Never -- curl -v http://my-registry:5001/v2/ || echo "Failed from pod via my-registry:5001"
+          
+          echo ""
+          echo "=== Testing localhost:5001 from test pod ==="
+          kubectl run test-curl-localhost --image=curlimages/curl:latest --rm -i --restart=Never -- curl -v http://localhost:5001/v2/ || echo "Failed from pod via localhost:5001"
+          
+          if [ -n "$REGISTRY_IP" ]; then
+            echo ""
+            echo "=== Testing registry IP from test pod ==="
+            kubectl run test-curl-ip --image=curlimages/curl:latest --rm -i --restart=Never -- curl -v http://$REGISTRY_IP:5001/v2/ || echo "Failed from pod via IP"
+          fi
+          
+          echo ""
+          echo "=== Testing from operator pod namespace ==="
           POD_NAME=$(kubectl get pods -l app.kubernetes.io/name=image-replicator -n default -o jsonpath='{.items[0].metadata.name}')
-          echo "Testing from pod: $POD_NAME"
-          
-          echo ""
-          echo "=== Note: Using debug container (distroless doesn't have shell/tools) ==="
-          
-          echo ""
-          echo "=== Testing DNS resolution for Docker Hub ==="
-          kubectl debug -n default $POD_NAME -it --image=busybox:latest --target=image-replicator -- nslookup registry-1.docker.io || echo "DNS resolution failed"
-          
-          echo ""
-          echo "=== Testing connectivity to Docker Hub registry API ==="
-          kubectl debug -n default $POD_NAME -it --image=busybox:latest --target=image-replicator -- wget --timeout=10 --tries=1 -O- https://registry-1.docker.io/v2/ || echo "Docker Hub connection failed"
-          
-          echo ""
-          echo "=== Testing connectivity to local registry ==="
-          kubectl debug -n default $POD_NAME -it --image=busybox:latest --target=image-replicator -- wget --timeout=10 --tries=1 -O- http://my-registry:5001/v2/ || echo "Local registry connection failed"
-          
-          echo ""
-          echo "=== Testing connectivity from node network namespace ==="
-          NODE_NAME=$(kubectl get pod -n default $POD_NAME -o jsonpath='{.spec.nodeName}')
-          echo "Node: $NODE_NAME"
-          
-          # Test from node directly
-          docker exec kind-control-plane nslookup registry-1.docker.io || echo "Node DNS failed"
-          docker exec kind-control-plane wget --timeout=10 --tries=1 -O- https://registry-1.docker.io/v2/ || echo "Node Docker Hub connection failed"
-          docker exec kind-control-plane wget --timeout=10 --tries=1 -O- http://my-registry:5001/v2/ || echo "Node local registry connection failed"
+          if [ -n "$POD_NAME" ]; then
+            echo "Operator pod: $POD_NAME"
+            kubectl run test-curl-default --image=curlimages/curl:latest --rm -i --restart=Never -n default -- curl -v http://my-registry:5001/v2/ || echo "Failed from default namespace via my-registry:5001"
+          fi
 
       - name: Test webhook with nginx pod
         run: |
