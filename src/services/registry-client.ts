@@ -270,6 +270,51 @@ export class RegistryClient {
   }
 
   /**
+   * Test connectivity to a registry
+   */
+  async testRegistryConnectivity(registry: string): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    const registryUrl = getRegistryApiUrl(registry, this.insecureRegistries);
+    const testUrl = `${registryUrl}/v2/`;
+    
+    console.debug(`Testing connectivity to ${registry} at ${testUrl}`);
+    
+    try {
+      const response = await fetch(testUrl, {
+        method: "GET",
+        signal: AbortSignal.timeout(10000), // 10 second timeout for connectivity test
+      });
+      
+      // Any response (even 401 Unauthorized) means we can connect
+      if (response.status === 200 || response.status === 401) {
+        console.debug(`✓ Successfully connected to ${registry} (status: ${response.status})`);
+        return { success: true };
+      }
+      
+      console.warn(`Registry ${registry} returned unexpected status: ${response.status}`);
+      return { 
+        success: false, 
+        error: `Registry returned status ${response.status}: ${response.statusText}` 
+      };
+    } catch (error) {
+      let errorMessage: string;
+      
+      if (error instanceof Error && error.name === "AbortError") {
+        errorMessage = `Connection timeout after 10s`;
+      } else if (error instanceof TypeError) {
+        errorMessage = `Network error: ${error.message}`;
+      } else {
+        errorMessage = error instanceof Error ? error.message : String(error);
+      }
+      
+      console.error(`✗ Failed to connect to ${registry}: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
    * Clone an image from source to target registry
    */
   async cloneImage(sourceImage: string, targetRegistry: string): Promise<{
@@ -293,6 +338,27 @@ export class RegistryClient {
     console.log(`Cloning ${sourceImage} -> ${targetImage}`);
 
     try {
+      // Pre-flight connectivity checks
+      console.debug(`Pre-flight: Testing connectivity to source registry ${sourceRef.registry}`);
+      const sourceConnectivity = await this.testRegistryConnectivity(sourceRef.registry);
+      if (!sourceConnectivity.success) {
+        throw new Error(
+          `Cannot connect to source registry ${sourceRef.registry}: ${sourceConnectivity.error}. ` +
+          `Please check network connectivity, DNS resolution, and firewall rules.`
+        );
+      }
+      
+      console.debug(`Pre-flight: Testing connectivity to target registry ${targetRef.registry}`);
+      const targetConnectivity = await this.testRegistryConnectivity(targetRef.registry);
+      if (!targetConnectivity.success) {
+        throw new Error(
+          `Cannot connect to target registry ${targetRef.registry}: ${targetConnectivity.error}. ` +
+          `Please check network connectivity, DNS resolution, and firewall rules.`
+        );
+      }
+      
+      console.debug(`Pre-flight checks passed, proceeding with image clone`);
+
       // 1. Get manifest from source
       const manifest = await this.getManifest(sourceRef);
       if (!manifest) {

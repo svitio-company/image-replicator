@@ -90,6 +90,36 @@ jobs:
           kubectl get pods -A
           kubectl get all -n default
 
+      - name: Test connectivity from operator pod
+        run: |
+          echo "=== Testing connectivity from operator pod ==="
+          POD_NAME=$(kubectl get pods -l app.kubernetes.io/name=image-replicator -n default -o jsonpath='{.items[0].metadata.name}')
+          echo "Testing from pod: $POD_NAME"
+          
+          echo ""
+          echo "=== Testing DNS resolution ==="
+          kubectl exec -n default $POD_NAME -- nslookup registry-1.docker.io || echo "DNS resolution failed"
+          
+          echo ""
+          echo "=== Testing connectivity to Docker Hub ==="
+          kubectl exec -n default $POD_NAME -- wget --timeout=10 --tries=1 -O- https://registry-1.docker.io/v2/ 2>&1 || echo "Docker Hub connection failed"
+          
+          echo ""
+          echo "=== Testing connectivity to local registry ==="
+          kubectl exec -n default $POD_NAME -- wget --timeout=10 --tries=1 -O- http://my-registry:5001/v2/ 2>&1 || echo "Local registry connection failed"
+          
+          echo ""
+          echo "=== Testing Docker Hub API with curl ==="
+          kubectl exec -n default $POD_NAME -- curl -v --max-time 10 https://registry-1.docker.io/v2/ 2>&1 || echo "curl to Docker Hub failed"
+          
+          echo ""
+          echo "=== Checking /etc/resolv.conf ==="
+          kubectl exec -n default $POD_NAME -- cat /etc/resolv.conf || echo "Could not read resolv.conf"
+          
+          echo ""
+          echo "=== Checking CA certificates ==="
+          kubectl exec -n default $POD_NAME -- ls -la /etc/ssl/certs/ | head -20 || echo "Could not list CA certs"
+
       - name: Test webhook with nginx pod
         run: |
           echo "=== Creating test namespace ==="
@@ -108,7 +138,7 @@ jobs:
           spec:
             containers:
             - name: nginx
-              image: ghcr.io/linuxserver/nginx:1.28.0-r3-ls342
+              image: nginx:1.29.4-alpine-slim
               ports:
               - containerPort: 80
           EOF
