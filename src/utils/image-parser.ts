@@ -78,7 +78,7 @@ export function parseImageReference(image: string): ImageReference {
 /**
  * Get the registry API URL
  */
-export function getRegistryApiUrl(registry: string): string {
+export function getRegistryApiUrl(registry: string, insecureRegistries: string[] = []): string {
   // Handle special cases
   if (registry === "docker.io" || registry === "registry-1.docker.io") {
     return "https://registry-1.docker.io";
@@ -95,6 +95,17 @@ export function getRegistryApiUrl(registry: string): string {
   // Default: assume HTTPS
   if (registry.startsWith("http://") || registry.startsWith("https://")) {
     return registry;
+  }
+  
+  // Check if this registry is in the insecure list
+  const normalizedRegistry = registry.toLowerCase();
+  const isInsecure = insecureRegistries.some(insecure => 
+    normalizedRegistry === insecure.toLowerCase() || 
+    normalizedRegistry.startsWith(insecure.toLowerCase() + ":")
+  );
+  
+  if (isInsecure) {
+    return `http://${registry}`;
   }
   
   return `https://${registry}`;

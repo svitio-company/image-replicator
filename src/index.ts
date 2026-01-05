@@ -12,6 +12,7 @@ const SKIP_TLS = Bun.env.SKIP_TLS === "true";
 const HEALTH_PORT = parseInt(Bun.env.HEALTH_PORT || "8080", 10);
 const TARGET_REGISTRY = Bun.env.TARGET_REGISTRY; // e.g., "myregistry.azurecr.io"
 const REGISTRY_TIMEOUT = parseInt(Bun.env.REGISTRY_TIMEOUT || "240000", 10); // 4 minutes default
+const INSECURE_REGISTRIES = Bun.env.INSECURE_REGISTRIES?.split(",").map(r => r.trim()).filter(Boolean) || [];
 
 console.log("Starting Image Validator Webhook...");
 console.log(`Configuration:
@@ -22,6 +23,7 @@ console.log(`Configuration:
   - TLS Key: ${TLS_KEY_PATH}
   - Target Registry: ${TARGET_REGISTRY || "(not set - checking source registries)"}
   - Registry Timeout: ${REGISTRY_TIMEOUT}ms
+  - Insecure Registries: ${INSECURE_REGISTRIES.length > 0 ? INSECURE_REGISTRIES.join(", ") : "(none)"}
 `);
 
 // Load registry credentials
@@ -73,7 +75,7 @@ if (TARGET_REGISTRY) {
 }
 
 // Create registry client
-const registryClient = new RegistryClient(authConfig, TARGET_REGISTRY, REGISTRY_TIMEOUT);
+const registryClient = new RegistryClient(authConfig, TARGET_REGISTRY, REGISTRY_TIMEOUT, INSECURE_REGISTRIES);
 
 // Health check server (HTTP)
 const healthServer = Bun.serve({

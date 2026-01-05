@@ -22,7 +22,8 @@ export class RegistryClient {
   constructor(
     private authConfig: RegistryAuthConfig,
     private targetRegistry?: string,
-    private timeout: number = 240000 // 4 minutes default
+    private timeout: number = 240000, // 4 minutes default
+    private insecureRegistries: string[] = [] // Registries to use HTTP instead of HTTPS
   ) {}
 
   /**
@@ -88,7 +89,7 @@ export class RegistryClient {
    */
   private async verifyManifest(imageRef: ImageReference): Promise<boolean> {
     const startTime = Date.now();
-    const registryUrl = getRegistryApiUrl(imageRef.registry);
+    const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
     const reference = imageRef.digest || imageRef.tag || "latest";
 
     // Build the manifest URL
@@ -331,7 +332,7 @@ export class RegistryClient {
    * Get manifest from source registry
    */
   private async getManifest(imageRef: ImageReference): Promise<string | null> {
-    const registryUrl = getRegistryApiUrl(imageRef.registry);
+    const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
     const reference = imageRef.digest || imageRef.tag || "latest";
     const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
 
@@ -382,7 +383,7 @@ export class RegistryClient {
    * Push manifest to target registry
    */
   private async pushManifest(imageRef: ImageReference, manifest: string): Promise<void> {
-    const registryUrl = getRegistryApiUrl(imageRef.registry);
+    const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
     const reference = imageRef.digest || imageRef.tag || "latest";
     const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
 
