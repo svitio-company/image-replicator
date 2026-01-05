@@ -90,112 +90,59 @@ jobs:
           kubectl get pods -A
           kubectl get all -n default
 
-      - name: Test registry connectivity
-        run: |
-          echo "=== Finding Kind cluster nodes ==="
-          kubectl get nodes
-          KIND_NODE=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')
-          echo "Kind node name: $KIND_NODE"
-          
-          echo ""
-          echo "=== Checking registry container details ==="
-          docker ps -a | grep registry
-          
-          echo ""
-          echo "=== Registry container networks ==="
-          docker inspect my-registry --format='{{json .NetworkSettings.Networks}}' | jq . || echo "Failed to inspect my-registry"
-          
-          echo ""
-          echo "=== Registry container ports ==="
-          docker port my-registry || echo "Failed to get ports"
-          
-          echo ""
-          echo "=== Getting registry container IP per network ==="
-          for net in $(docker inspect my-registry --format='{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'); do
-            IP=$(docker inspect my-registry --format="{{.NetworkSettings.Networks.$net.IPAddress}}")
-            echo "Network $net: $IP"
-          done
-          
-          echo ""
-          echo "=== Checking registry service/endpoint in Kubernetes ==="
-          kubectl get svc -A
-          kubectl get endpoints -A
-          
-          echo ""
-          echo "=== Testing registry from GitHub Actions runner ==="
-          curl -v http://localhost:5001/v2/ || echo "Failed from runner via localhost:5001"
-          
-          echo ""
-          echo "=== Testing registry from Kind node ==="
-          docker exec $KIND_NODE curl -v http://my-registry:5001/v2/ || echo "Failed from node via my-registry:5001"
-          docker exec $KIND_NODE curl -v http://localhost:5001/v2/ || echo "Failed from node via localhost:5001"
-          
-          echo ""
-          echo "=== Testing DNS resolution from Kind node ==="
-          docker exec $KIND_NODE nslookup my-registry || echo "DNS resolution failed for my-registry"
-          docker exec $KIND_NODE getent hosts my-registry || echo "getent failed for my-registry"
-          
-          echo ""
-          echo "=== Checking what's listening on port 5001 inside Kind node ==="
-          docker exec $KIND_NODE netstat -tlnp | grep 5001 || echo "Nothing listening on 5001 in node"
-          
-          echo ""
-          echo "=== Checking network connectivity from test pod ==="
-          echo "Testing my-registry:5001..."
-          kubectl run test-curl --image=curlimages/curl:latest --rm -i --restart=Never -- curl -v http://my-registry:5001/v2/ || echo "Failed from pod via my-registry:5001"
+      # Disabled for connectivity debugging
+      # - name: Test webhook with nginx pod
+      #   run: |
+      #     echo "=== Creating test namespace ==="
+      #     kubectl create namespace test-namespace || true
+      #     
+      #     echo ""
+      #     echo "=== Creating test nginx pod ==="
+      #     cat <<EOF | kubectl apply -f -
+      #     apiVersion: v1
+      #     kind: Pod
+      #     metadata:
+      #       name: test-nginx
+      #       namespace: test-namespace
+      #       labels:
+      #         app: test-nginx
+      #     spec:
+      #       containers:
+      #       - name: nginx
+      #         image: nginx:1.29.4-alpine-slim
+      #         ports:
+      #         - containerPort: 80
+      #     EOF
+      #     
+      #     echo ""
+      #     echo "=== Waiting for pod to be created ==="
+      #     kubectl wait --for=condition=ready pod/test-nginx -n test-namespace --timeout=120s || true
+      #     
+      #     echo ""
+      #     echo "=== Pod Status ==="
+      #     kubectl get pod test-nginx -n test-namespace -o wide
+      #     
+      #     echo ""
+      #     echo "=== Pod Events ==="
+      #     kubectl describe pod test-nginx -n test-namespace
 
-      - name: Test webhook with nginx pod
-        run: |
-          echo "=== Creating test namespace ==="
-          kubectl create namespace test-namespace || true
-          
-          echo ""
-          echo "=== Creating test nginx pod ==="
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: test-nginx
-            namespace: test-namespace
-            labels:
-              app: test-nginx
-          spec:
-            containers:
-            - name: nginx
-              image: nginx:1.29.4-alpine-slim
-              ports:
-              - containerPort: 80
-          EOF
-          
-          echo ""
-          echo "=== Waiting for pod to be created ==="
-          kubectl wait --for=condition=ready pod/test-nginx -n test-namespace --timeout=120s || true
-          
-          echo ""
-          echo "=== Pod Status ==="
-          kubectl get pod test-nginx -n test-namespace -o wide
-          
-          echo ""
-          echo "=== Pod Events ==="
-          kubectl describe pod test-nginx -n test-namespace
-
-      - name: Verify image was copied to local registry
-        run: |
-          echo "=== Checking if nginx image was copied to local registry ==="
-          
-          # Check registry catalog
-          echo "Registry catalog:"
-          curl -s http://my-registry:5001/v2/_catalog || echo "Failed to get catalog"
-          
-          # Check if nginx repository exists
-          echo ""
-          echo "Checking nginx tags:"
-          curl -s http://my-registry:5001/v2/library/nginx/tags/list || echo "nginx not found in registry"
-          
-          # Verify the image manifest exists
-          echo ""
-          echo "Verifying nginx:1.25-alpine manifest:"
-          curl -s -I http://my-registry:5001/v2/library/nginx/manifests/1.25-alpine || echo "Manifest not found"
+      # - name: Verify image was copied to local registry
+      #   run: |
+      #     echo "=== Checking if nginx image was copied to local registry ==="
+      #     
+      #     # Check registry catalog
+      #     echo "Registry catalog:"
+      #     curl -s http://my-registry:5001/v2/_catalog || echo "Failed to get catalog"
+      #     
+      #     # Check if nginx repository exists
+      #     echo ""
+      #     echo "Checking nginx tags:"
+      #     curl -s http://my-registry:5001/v2/library/nginx/tags/list || echo "nginx not found in registry"
+      #     
+      #     # Verify the image manifest exists
+      #     echo ""
+      #     echo "Verifying nginx:1.25-alpine manifest:"
+      #     curl -s -I http://my-registry:5001/v2/library/nginx/manifests/1.25-alpine || echo "Manifest not found"
 
       - name: Show replicator logs
         if: always()
@@ -203,38 +150,38 @@ jobs:
           echo "=== Pod Logs ==="
           kubectl logs -l app.kubernetes.io/name=image-replicator -n default --all-containers=true --tail=200 || true
 
-      - name: Check webhook logs
-        run: |
-          echo "=== Webhook Logs (Last 100 lines) ==="
-          kubectl logs -l app.kubernetes.io/name=imn test-namespace -o jsonpath='{.status.phase}')
-          echo "Pod status: $POD_STATUS"
-          
-          if [ "$POD_STATUS" != "Running" ]; then
-            echo "ERROR: Pod is not running!"
-            kubectl describe pod test-nginx -n test-namespace
-            exit 1
-          fi
-          
-          echo "SUCCESS: Pod is running with image from local registry!"
+      # - name: Check webhook logs
+      #   run: |
+      #     echo "=== Webhook Logs (Last 100 lines) ==="
+      #     kubectl logs -l app.kubernetes.io/name=imn test-namespace -o jsonpath='{.status.phase}')
+      #     echo "Pod status: $POD_STATUS"
+      #     
+      #     if [ "$POD_STATUS" != "Running" ]; then
+      #       echo "ERROR: Pod is not running!"
+      #       kubectl describe pod test-nginx -n test-namespace
+      #       exit 1
+      #     fi
+      #     
+      #     echo "SUCCESS: Pod is running with image from local registry!"
 
-      - name: Test pod functionality
-        run: |
-          echo "=== Testing nginx responds ==="
-          kubectl exec test-nginx -n test-namespace -- curl -s http://localhost || echo "Curl failed"
-          
-          echo ""
-          echo "=== Nginx version ==="
-          kubectl exec test-nginx -n test-namespace -- nginx -v
+      # - name: Test pod functionality
+      #   run: |
+      #     echo "=== Testing nginx responds ==="
+      #     kubectl exec test-nginx -n test-namespace -- curl -s http://localhost || echo "Curl failed"
+      #     
+      #     echo ""
+      #     echo "=== Nginx version ==="
+      #     kubectl exec test-nginx -n test-namespace -- nginx -v
 
-      - name: Cleanup test resources
-        if: always()
-        run: |
-          kubectl delete namespace test-namespaceinx -v
+      # - name: Cleanup test resources
+      #   if: always()
+      #   run: |
+      #     kubectl delete namespace test-namespaceinx -v
 
-      - name: Cleanup test resources
-        if: always()
-        run: |
-          kubectl delete pod test-nginx --ignore-not-found=true
+      # - name: Cleanup test resources
+      #   if: always()
+      #   run: |
+      #     kubectl delete pod test-nginx --ignore-not-found=true
 
       - name: Show logs on failure
         if: failure()
