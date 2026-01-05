@@ -345,47 +345,62 @@ export class RegistryClient {
     const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
     console.debug(`getManifest URL: ${manifestUrl}`);
 
-    let response = await fetch(manifestUrl, {
-      method: "GET",
-      headers: {
-        Accept: [
-          "application/vnd.docker.distribution.manifest.v2+json",
-          "application/vnd.docker.distribution.manifest.list.v2+json",
-          "application/vnd.oci.image.manifest.v1+json",
-          "application/vnd.oci.image.index.v1+json",
-        ].join(", "),
-      },
-      signal: AbortSignal.timeout(this.timeout),
-    });
+    try {
+      let response = await fetch(manifestUrl, {
+        method: "GET",
+        headers: {
+          Accept: [
+            "application/vnd.docker.distribution.manifest.v2+json",
+            "application/vnd.docker.distribution.manifest.list.v2+json",
+            "application/vnd.oci.image.manifest.v1+json",
+            "application/vnd.oci.image.index.v1+json",
+          ].join(", "),
+        },
+        signal: AbortSignal.timeout(this.timeout),
+      });
 
-    // Handle authentication
-    if (response.status === 401) {
-      const wwwAuth = response.headers.get("WWW-Authenticate");
-      if (wwwAuth) {
-        const token = await this.getToken(imageRef, wwwAuth);
-        if (token) {
-          response = await fetch(manifestUrl, {
-            method: "GET",
-            headers: {
-              Accept: [
-                "application/vnd.docker.distribution.manifest.v2+json",
-                "application/vnd.docker.distribution.manifest.list.v2+json",
-                "application/vnd.oci.image.manifest.v1+json",
-                "application/vnd.oci.image.index.v1+json",
-              ].join(", "),
-              Authorization: `Bearer ${token}`,
-            },
-            signal: AbortSignal.timeout(this.timeout),
-          });
+      // Handle authentication
+      if (response.status === 401) {
+        const wwwAuth = response.headers.get("WWW-Authenticate");
+        if (wwwAuth) {
+          const token = await this.getToken(imageRef, wwwAuth);
+          if (token) {
+            response = await fetch(manifestUrl, {
+              method: "GET",
+              headers: {
+                Accept: [
+                  "application/vnd.docker.distribution.manifest.v2+json",
+                  "application/vnd.docker.distribution.manifest.list.v2+json",
+                  "application/vnd.oci.image.manifest.v1+json",
+                  "application/vnd.oci.image.index.v1+json",
+                ].join(", "),
+                Authorization: `Bearer ${token}`,
+              },
+              signal: AbortSignal.timeout(this.timeout),
+            });
+          }
         }
       }
-    }
 
-    if (!response.ok) {
-      throw new Error(`Failed to get manifest: ${response.status} ${response.statusText}`);
-    }
+      if (!response.ok) {
+        throw new Error(`Failed to get manifest: ${response.status} ${response.statusText}`);
+      }
 
-    return await response.text();
+      return await response.text();
+    } catch (error) {
+      // Handle timeout errors
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`Request to ${imageRef.registry} timed out after ${this.timeout}ms`);
+      }
+      
+      // Handle network errors
+      if (error instanceof TypeError) {
+        throw new Error(`Network error connecting to ${imageRef.registry}: ${error.message}`);
+      }
+      
+      // Re-throw other errors
+      throw error;
+    }
   }
 
   /**
@@ -400,36 +415,51 @@ export class RegistryClient {
     const manifestObj = JSON.parse(manifest);
     const contentType = manifestObj.mediaType || "application/vnd.docker.distribution.manifest.v2+json";
 
-    let response = await fetch(manifestUrl, {
-      method: "PUT",
-      headers: {
-        "Content-Type": contentType,
-      },
-      body: manifest,
-      signal: AbortSignal.timeout(this.timeout),
-    });
+    try {
+      let response = await fetch(manifestUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": contentType,
+        },
+        body: manifest,
+        signal: AbortSignal.timeout(this.timeout),
+      });
 
-    // Handle authentication
-    if (response.status === 401) {
-      const wwwAuth = response.headers.get("WWW-Authenticate");
-      if (wwwAuth) {
-        const token = await this.getToken(imageRef, wwwAuth);
-        if (token) {
-          response = await fetch(manifestUrl, {
-            method: "PUT",
-            headers: {
-              "Content-Type": contentType,
-              Authorization: `Bearer ${token}`,
-            },
-            body: manifest,
-            signal: AbortSignal.timeout(this.timeout),
-          });
+      // Handle authentication
+      if (response.status === 401) {
+        const wwwAuth = response.headers.get("WWW-Authenticate");
+        if (wwwAuth) {
+          const token = await this.getToken(imageRef, wwwAuth);
+          if (token) {
+            response = await fetch(manifestUrl, {
+              method: "PUT",
+              headers: {
+                "Content-Type": contentType,
+                Authorization: `Bearer ${token}`,
+              },
+              body: manifest,
+              signal: AbortSignal.timeout(this.timeout),
+            });
+          }
         }
       }
-    }
 
-    if (!response.ok) {
-      throw new Error(`Failed to push manifest: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Failed to push manifest: ${response.status} ${response.statusText}`);
+      }
+    } catch (error) {
+      // Handle timeout errors
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(`Request to ${imageRef.registry} timed out after ${this.timeout}ms`);
+      }
+      
+      // Handle network errors
+      if (error instanceof TypeError) {
+        throw new Error(`Network error connecting to ${imageRef.registry}: ${error.message}`);
+      }
+      
+      // Re-throw other errors
+      throw error;
     }
   }
 }
