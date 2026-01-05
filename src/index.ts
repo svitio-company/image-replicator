@@ -13,6 +13,13 @@ const HEALTH_PORT = parseInt(Bun.env.HEALTH_PORT || "8080", 10);
 const TARGET_REGISTRY = Bun.env.TARGET_REGISTRY; // e.g., "myregistry.azurecr.io"
 const REGISTRY_TIMEOUT = parseInt(Bun.env.REGISTRY_TIMEOUT || "240000", 10); // 4 minutes default
 const INSECURE_REGISTRIES = Bun.env.INSECURE_REGISTRIES?.split(",").map(r => r.trim()).filter(Boolean) || [];
+const DEBUG = Bun.env.DEBUG === "true";
+
+// Set global DEBUG flag for console.debug filtering
+if (!DEBUG) {
+  // Disable console.debug when DEBUG is false
+  console.debug = () => {};
+}
 
 console.log("Starting Image Validator Webhook...");
 console.log(`Configuration:
@@ -24,6 +31,7 @@ console.log(`Configuration:
   - Target Registry: ${TARGET_REGISTRY || "(not set - checking source registries)"}
   - Registry Timeout: ${REGISTRY_TIMEOUT}ms
   - Insecure Registries: ${INSECURE_REGISTRIES.length > 0 ? INSECURE_REGISTRIES.join(", ") : "(none)"}
+  - Debug Logging: ${DEBUG}
 `);
 
 // Load registry credentials

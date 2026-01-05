@@ -17,6 +17,8 @@ const DEFAULT_REGISTRIES: Record<string, string> = {
  * - image@sha256:abc123...
  */
 export function parseImageReference(image: string): ImageReference {
+  console.debug(`parseImageReference input: ${image}`);
+  
   let registry = "docker.io";
   let repository = image;
   let tag = "latest";
@@ -66,13 +68,17 @@ export function parseImageReference(image: string): ImageReference {
   // Normalize registry
   const normalizedRegistry = DEFAULT_REGISTRIES[registry] || registry;
 
-  return {
+  const result = {
     registry: normalizedRegistry,
     repository,
     tag,
     digest,
     fullImage: image,
   };
+  
+  console.debug(`parseImageReference output:`, JSON.stringify(result, null, 2));
+  
+  return result;
 }
 
 /**

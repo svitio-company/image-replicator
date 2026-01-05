@@ -40,6 +40,8 @@ export class RegistryClient {
    */
   async checkImageExists(image: string): Promise<ImageValidationResult> {
     const imageRef = parseImageReference(image);
+    console.debug(`checkImageExists for image: ${image}`);
+    console.debug(`Parsed imageRef:`, JSON.stringify(imageRef, null, 2));
 
     // If target registry is set, check if image exists there (cloned version)
     if (this.targetRegistry) {
@@ -94,6 +96,7 @@ export class RegistryClient {
 
     // Build the manifest URL
     const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
+    console.debug(`verifyManifest URL: ${manifestUrl}`);
 
     try {
       // First, try without auth to see if we need authentication
@@ -275,12 +278,17 @@ export class RegistryClient {
   }> {
     const startTime = Date.now();
     const sourceRef = parseImageReference(sourceImage);
+    console.debug(`cloneImage sourceImage: ${sourceImage}`);
+    console.debug(`cloneImage sourceRef:`, JSON.stringify(sourceRef, null, 2));
+    console.debug(`cloneImage targetRegistry: ${targetRegistry}`);
     
     // Build target image reference
     const targetImage = sourceRef.digest
       ? `${targetRegistry}/${sourceRef.repository}@${sourceRef.digest}`
       : `${targetRegistry}/${sourceRef.repository}:${sourceRef.tag || "latest"}`;
     const targetRef = parseImageReference(targetImage);
+    console.debug(`cloneImage targetImage: ${targetImage}`);
+    console.debug(`cloneImage targetRef:`, JSON.stringify(targetRef, null, 2));
 
     console.log(`Cloning ${sourceImage} -> ${targetImage}`);
 
@@ -335,6 +343,7 @@ export class RegistryClient {
     const registryUrl = getRegistryApiUrl(imageRef.registry, this.insecureRegistries);
     const reference = imageRef.digest || imageRef.tag || "latest";
     const manifestUrl = `${registryUrl}/v2/${imageRef.repository}/manifests/${reference}`;
+    console.debug(`getManifest URL: ${manifestUrl}`);
 
     let response = await fetch(manifestUrl, {
       method: "GET",
