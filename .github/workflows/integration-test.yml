@@ -108,7 +108,7 @@ jobs:
           spec:
             containers:
             - name: nginx
-              image: nginx:1.29.4-alpine-slim
+              image: ghcr.io/linuxserver/nginx:1.28.0-r3-ls342
               ports:
               - containerPort: 80
           EOF
