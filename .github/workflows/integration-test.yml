@@ -54,7 +54,7 @@ jobs:
             --set extraEnv[1].name=INSECURE_REGISTRIES \
             --set extraEnv[1].value=my-registry:5001 \
             --set extraEnv[2].name=DEBUG \
-            --set extraEnv[2].value=true \
+            --set-string extraEnv[2].value=true \
             --set certManager.certificate.privateKey.rotationPolicy=Always \
             --set webhook.namespaceSelector.matchExpressions[0].key=kubernetes.io/metadata.name \
             --set webhook.namespaceSelector.matchExpressions[0].operator=NotIn \
